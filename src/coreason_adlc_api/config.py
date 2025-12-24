@@ -1,0 +1,49 @@
+# Copyright (c) 2025 CoReason, Inc.
+#
+# This software is proprietary and dual-licensed.
+# Licensed under the Prosperity Public License 3.0 (the "License").
+# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
+# For details, see the LICENSE file.
+# Commercial use beyond a 30-day trial requires a separate license.
+#
+# Source Code: https://github.com/CoReason-AI/coreason_adlc_api
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """
+    Application Configuration based on Pydantic Settings.
+    Reads from environment variables.
+    """
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore"
+    )
+
+    # Core
+    APP_ENV: str = "development"
+    DEBUG: bool = False
+    PORT: int = 8000
+    HOST: str = "0.0.0.0"
+
+    # Security
+    # 32-byte hex string (64 chars). Default provided for dev/test only.
+    # In prod, this MUST be overridden.
+    ENCRYPTION_KEY: str = "0000000000000000000000000000000000000000000000000000000000000000"
+
+    # Database
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "coreason_db"
+
+    # Logging
+    LOG_LEVEL: str = "INFO"
+
+
+# Global Settings Instance
+settings = Settings()

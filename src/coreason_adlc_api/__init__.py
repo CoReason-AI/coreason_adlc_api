@@ -8,14 +8,9 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-"""
-Secure ADLC Middleware enforcing PII scrubbing, budget caps, and strict governance.
-"""
-
-__version__ = "0.1.0"
-__author__ = "Gowtham A Rao"
-__email__ = "gowtham.rao@coreason.ai"
-
-from .main import hello_world
-
-__all__ = ["hello_world"]
+# Expose package version
+try:
+    from importlib.metadata import version
+    __version__ = version("coreason_adlc_api")
+except Exception: # pragma: no cover
+    __version__ = "0.0.0"
