@@ -67,8 +67,10 @@ def test_decryption_failure(vault: VaultCrypto) -> None:
     text = "my-secret"
     encrypted = vault.encrypt_secret(text)
 
-    # Tamper with the base64 string
-    tampered = "A" + encrypted[1:]
+    # Tamper with the base64 string safely
+    # We replace the first character with something different
+    replacement = "A" if encrypted[0] != "A" else "B"
+    tampered = replacement + encrypted[1:]
 
     with pytest.raises(ValueError, match="Decryption failed"):
         vault.decrypt_secret(tampered)
