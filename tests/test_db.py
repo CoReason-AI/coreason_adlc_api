@@ -112,3 +112,28 @@ async def test_concurrent_db_init() -> None:
         # The current implementation does NOT have a lock.
         # So we assert that at least one succeeded and we have a pool.
         assert get_pool() == mock_pool
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_pool_restart() -> None:
+    """Verify that the pool can be re-initialized after closing (simulating restart)."""
+    import coreason_adlc_api.db as db_module
+
+    db_module._pool = None
+    mock_pool_1 = AsyncMock()
+    mock_pool_2 = AsyncMock()
+
+    # 1. Init
+    with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_1)):
+        await init_db()
+        assert get_pool() == mock_pool_1
+
+    # 2. Close
+    await close_db()
+    with pytest.raises(RuntimeError):
+        get_pool()
+
+    # 3. Re-Init
+    with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_2)):
+        await init_db()
+        assert get_pool() == mock_pool_2

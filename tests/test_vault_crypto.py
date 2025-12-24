@@ -139,3 +139,40 @@ def test_decrypt_with_wrong_key(vault: VaultCrypto) -> None:
     # Attempt to decrypt
     with pytest.raises(ValueError, match="Decryption failed"):
         other_vault.decrypt_secret(encrypted)
+
+
+def test_key_rotation_workflow(vault: VaultCrypto) -> None:
+    """Verify the workflow of rotating keys: Decrypt with old, re-encrypt with new."""
+    secret_data = "my-precious-api-key"
+
+    # 1. Encrypt with Key A (current vault)
+    encrypted_a = vault.encrypt_secret(secret_data)
+
+    # 2. Simulate Key Rotation
+    new_key = secrets.token_hex(32)
+    vault_b = VaultCrypto(key_hex=new_key)
+
+    # 3. Decrypt with old key (Key A)
+    decrypted = vault.decrypt_secret(encrypted_a)
+    assert decrypted == secret_data
+
+    # 4. Re-encrypt with new key (Key B)
+    encrypted_b = vault_b.encrypt_secret(decrypted)
+
+    # 5. Verify integrity with new key
+    assert vault_b.decrypt_secret(encrypted_b) == secret_data
+    assert encrypted_a != encrypted_b
+
+
+def test_decrypt_short_payload(vault: VaultCrypto) -> None:
+    """Verify behavior when ciphertext is too short (e.g. less than IV length)."""
+    # 1 byte -> Base64 encoded is "AA==".
+    # Decodes to 1 byte. IV requires 12 bytes.
+    with pytest.raises(ValueError, match="Decryption failed"):
+        vault.decrypt_secret("AA==")
+
+
+def test_decrypt_empty_string_input(vault: VaultCrypto) -> None:
+    """Verify behavior when input is an empty string."""
+    with pytest.raises(ValueError, match="Decryption failed"):
+        vault.decrypt_secret("")
