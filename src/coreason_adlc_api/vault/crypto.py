@@ -10,7 +10,10 @@
 
 import base64
 import os
+from typing import cast
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from coreason_adlc_api.config import settings
 
 
@@ -40,7 +43,7 @@ class VaultCrypto:
         try:
             key_bytes = bytes.fromhex(raw_key)
         except ValueError:
-            raise ValueError("ENCRYPTION_KEY must be a valid hex string.")
+            raise ValueError("ENCRYPTION_KEY must be a valid hex string.") from None
 
         if len(key_bytes) != 32:
             raise ValueError(f"ENCRYPTION_KEY must be 32 bytes (64 hex chars). Got {len(key_bytes)} bytes.")
@@ -66,11 +69,6 @@ class VaultCrypto:
             nonce = decoded[:12]
             ciphertext = decoded[12:]
             plaintext = self._aesgcm.decrypt(nonce, ciphertext, None)
-            return plaintext.decode("utf-8")
-        except Exception as e:
-            raise ValueError("Decryption failed. Invalid key or corrupted data.") from e
-
-# Global Vault Instance
-# Note: This requires ENCRYPTION_KEY to be set in env or passed explicitly.
-# We lazily initialize or handle it in the app factory usually,
-# but providing a helper function is useful.
+            return cast(str, plaintext.decode("utf-8"))
+        except Exception:
+            raise ValueError("Decryption failed. Invalid key or corrupted data.") from None

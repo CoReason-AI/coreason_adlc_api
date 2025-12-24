@@ -8,12 +8,14 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+
+from fastapi import FastAPI
 from loguru import logger
+
 from coreason_adlc_api.config import settings
-from coreason_adlc_api.db import init_db, close_db
+from coreason_adlc_api.db import close_db, init_db
 
 
 @asynccontextmanager
@@ -49,7 +51,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.DEBUG else None,
     )
 
-    @app.get("/health")
+    @app.get("/health")  # type: ignore[misc]
     async def health_check() -> dict[str, str]:
         """
         Basic health check endpoint.
@@ -57,6 +59,7 @@ def create_app() -> FastAPI:
         return {"status": "ok", "env": settings.APP_ENV}
 
     return app
+
 
 # Expose the app instance for Uvicorn
 app = create_app()

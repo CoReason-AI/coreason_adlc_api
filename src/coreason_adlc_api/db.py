@@ -11,6 +11,7 @@
 import asyncpg
 from asyncpg import Pool
 from loguru import logger
+
 from coreason_adlc_api.config import settings
 
 # Global connection pool
@@ -35,7 +36,7 @@ async def init_db() -> None:
             port=settings.POSTGRES_PORT,
             database=settings.POSTGRES_DB,
             min_size=1,
-            max_size=10
+            max_size=10,
         )
         logger.info("Database connection pool established.")
     except Exception as e:

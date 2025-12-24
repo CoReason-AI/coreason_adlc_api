@@ -8,19 +8,23 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import pytest
-import os
 import secrets
+from typing import Generator
+
+import pytest
+
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
 # Valid 32-byte hex key
 TEST_KEY = secrets.token_hex(32)
 
-@pytest.fixture
-def vault():
-    return VaultCrypto(key_hex=TEST_KEY)
 
-def test_encryption_decryption_cycle(vault):
+@pytest.fixture  # type: ignore[misc]
+def vault() -> Generator[VaultCrypto, None, None]:
+    yield VaultCrypto(key_hex=TEST_KEY)
+
+
+def test_encryption_decryption_cycle(vault: VaultCrypto) -> None:
     """Verify that a string can be encrypted and then decrypted to its original value."""
     original_text = "sk-live-1234567890abcdef"
     encrypted = vault.encrypt_secret(original_text)
@@ -31,7 +35,8 @@ def test_encryption_decryption_cycle(vault):
     decrypted = vault.decrypt_secret(encrypted)
     assert decrypted == original_text
 
-def test_encryption_randomness(vault):
+
+def test_encryption_randomness(vault: VaultCrypto) -> None:
     """Verify that encrypting the same text twice produces different outputs (due to nonce)."""
     text = "secret-value"
     enc1 = vault.encrypt_secret(text)
@@ -41,7 +46,8 @@ def test_encryption_randomness(vault):
     assert vault.decrypt_secret(enc1) == text
     assert vault.decrypt_secret(enc2) == text
 
-def test_initialization_with_invalid_key():
+
+def test_initialization_with_invalid_key() -> None:
     """Verify error handling for invalid keys."""
     # Too short
     with pytest.raises(ValueError, match="ENCRYPTION_KEY must be 32 bytes"):
@@ -55,7 +61,8 @@ def test_initialization_with_invalid_key():
     # Note: We rely on the class logic, if settings provides a default, this test might need adjustment.
     # But passing explicit None should trigger the settings lookup.
 
-def test_decryption_failure(vault):
+
+def test_decryption_failure(vault: VaultCrypto) -> None:
     """Verify that tampering with the ciphertext causes decryption failure."""
     text = "my-secret"
     encrypted = vault.encrypt_secret(text)
@@ -66,21 +73,25 @@ def test_decryption_failure(vault):
     with pytest.raises(ValueError, match="Decryption failed"):
         vault.decrypt_secret(tampered)
 
-def test_decrypt_invalid_base64(vault):
+
+def test_decrypt_invalid_base64(vault: VaultCrypto) -> None:
     """Verify error when input is not valid base64."""
     with pytest.raises(ValueError, match="Decryption failed"):
         vault.decrypt_secret("!@#$%^&*()")
 
-def test_default_settings_key():
+
+def test_default_settings_key() -> None:
     """Verify it works with the default key from settings if none provided."""
     # Assuming config.py has a default valid key
     v = VaultCrypto()
     enc = v.encrypt_secret("test")
     assert v.decrypt_secret(enc) == "test"
 
-def test_missing_env_key():
+
+def test_missing_env_key() -> None:
     """Verify it raises error if settings key is missing/empty."""
     from coreason_adlc_api.config import settings
+
     original = settings.ENCRYPTION_KEY
     try:
         settings.ENCRYPTION_KEY = ""

@@ -8,13 +8,16 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import pytest
-from unittest.mock import patch, AsyncMock
-from coreason_adlc_api.db import init_db, close_db, get_pool
-from coreason_adlc_api.config import settings
+from unittest.mock import AsyncMock, patch
 
-@pytest.mark.asyncio
-async def test_db_lifecycle():
+import pytest
+
+from coreason_adlc_api.config import settings
+from coreason_adlc_api.db import close_db, get_pool, init_db
+
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_db_lifecycle() -> None:
     """Verify init_db creates a pool and close_db closes it."""
 
     # Mock asyncpg.create_pool
@@ -23,6 +26,7 @@ async def test_db_lifecycle():
     with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool)) as mock_create:
         # Reset global state just in case
         import coreason_adlc_api.db as db_module
+
         db_module._pool = None
 
         # Test Init
@@ -35,7 +39,7 @@ async def test_db_lifecycle():
             port=settings.POSTGRES_PORT,
             database=settings.POSTGRES_DB,
             min_size=1,
-            max_size=10
+            max_size=10,
         )
         assert get_pool() == mock_pool
 
@@ -51,21 +55,25 @@ async def test_db_lifecycle():
         with pytest.raises(RuntimeError, match="Database pool is not initialized"):
             get_pool()
 
-@pytest.mark.asyncio
-async def test_db_init_failure():
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_db_init_failure() -> None:
     """Verify init_db raises exception on failure."""
 
     with patch("asyncpg.create_pool", side_effect=Exception("Connection failed")):
         import coreason_adlc_api.db as db_module
+
         db_module._pool = None
 
         with pytest.raises(Exception, match="Connection failed"):
             await init_db()
 
-@pytest.mark.asyncio
-async def test_close_db_idempotent():
+
+@pytest.mark.asyncio  # type: ignore[misc]
+async def test_close_db_idempotent() -> None:
     """Verify close_db handles being called when pool is None."""
     import coreason_adlc_api.db as db_module
+
     db_module._pool = None
 
     # Should not raise

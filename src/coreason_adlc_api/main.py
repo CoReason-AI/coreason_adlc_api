@@ -9,8 +9,10 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import sys
+
 import uvicorn
 from loguru import logger
+
 from coreason_adlc_api.config import settings
 
 
@@ -25,7 +27,7 @@ def start() -> None:
         host=settings.HOST,
         port=settings.PORT,
         log_level=settings.LOG_LEVEL.lower(),
-        reload=settings.DEBUG
+        reload=settings.DEBUG,
     )
 
 
@@ -41,5 +43,5 @@ def main() -> None:
         sys.exit(1)
 
 
-if __name__ == "__main__": # pragma: no cover
+if __name__ == "__main__":  # pragma: no cover
     main()
