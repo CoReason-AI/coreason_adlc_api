@@ -101,3 +101,41 @@ def test_missing_env_key() -> None:
             VaultCrypto()
     finally:
         settings.ENCRYPTION_KEY = original
+
+
+def test_encrypt_empty_string(vault: VaultCrypto) -> None:
+    """Verify handling of empty strings."""
+    encrypted = vault.encrypt_secret("")
+    decrypted = vault.decrypt_secret(encrypted)
+    assert decrypted == ""
+
+
+def test_encrypt_unicode(vault: VaultCrypto) -> None:
+    """Verify handling of Unicode characters."""
+    text = "🔒 Secret Key with Emojis 🚀 and Symbols @#$%"
+    encrypted = vault.encrypt_secret(text)
+    decrypted = vault.decrypt_secret(encrypted)
+    assert decrypted == text
+
+
+def test_encrypt_large_payload(vault: VaultCrypto) -> None:
+    """Verify handling of large payloads (e.g., 1MB)."""
+    text = "a" * 1024 * 1024  # 1MB
+    encrypted = vault.encrypt_secret(text)
+    decrypted = vault.decrypt_secret(encrypted)
+    assert decrypted == text
+
+
+def test_decrypt_with_wrong_key(vault: VaultCrypto) -> None:
+    """Verify that decryption fails when using a different key."""
+    # Encrypt with the default vault fixture (Key A)
+    text = "top-secret"
+    encrypted = vault.encrypt_secret(text)
+
+    # Initialize a second vault with a different key (Key B)
+    other_key = secrets.token_hex(32)
+    other_vault = VaultCrypto(key_hex=other_key)
+
+    # Attempt to decrypt
+    with pytest.raises(ValueError, match="Decryption failed"):
+        other_vault.decrypt_secret(encrypted)
