@@ -43,7 +43,7 @@ async def get_api_key_for_model(auc_id: str, model: str) -> str:
 
     try:
         # litellm.get_llm_provider returns (provider, model, api_key, api_base)
-        provider, _, _, _ = litellm.get_llm_provider(model)  # type: ignore[attr-defined]
+        provider, _, _, _ = litellm.get_llm_provider(model)
     except Exception:
         # Fallback or strict?
         provider = model.split("/")[0] if "/" in model else "openai"
