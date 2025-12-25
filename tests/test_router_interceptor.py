@@ -17,14 +17,7 @@ from fastapi.testclient import TestClient
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 
-# We need to register the router to app if not already done.
-# But app.py likely doesn't have it yet.
-# So we can include it in the test setup.
-from coreason_adlc_api.routers.interceptor import router as interceptor_router
-
-app.include_router(interceptor_router, prefix="/api/v1")
-
-
+# Router is already registered in app.py now.
 client = TestClient(app)
 
 
