@@ -36,7 +36,7 @@ def mock_user_identity():
     yield user
     del app.dependency_overrides[parse_and_validate_token]
 
-def test_interceptor_proxy_exception(mock_user_identity):
+def test_interceptor_proxy_exception(mock_user_identity) -> None:
     """Test exception during proxy call (Lines 86-89 in interceptor.py)."""
     with mock.patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail") as mock_budget, \
          mock.patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy") as mock_proxy:
@@ -55,7 +55,7 @@ def test_interceptor_proxy_exception(mock_user_identity):
         with pytest.raises(Exception, match="Proxy Failure"):
             client.post("/api/v1/chat/completions", json=payload)
 
-def test_interceptor_malformed_response(mock_user_identity):
+def test_interceptor_malformed_response(mock_user_identity) -> None:
     """Test malformed response from LLM (Lines 95-96 in interceptor.py)."""
     with mock.patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail") as mock_budget, \
          mock.patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy") as mock_proxy, \

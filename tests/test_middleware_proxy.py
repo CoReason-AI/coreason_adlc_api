@@ -42,7 +42,7 @@ def mock_litellm():
 
 
 @pytest.mark.asyncio
-async def test_proxy_success(mock_db_pool, mock_vault_crypto, mock_litellm):
+async def test_proxy_success(mock_db_pool, mock_vault_crypto, mock_litellm) -> None:
     """Test successful proxy execution."""
     # Setup DB
     mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
@@ -67,7 +67,7 @@ async def test_proxy_success(mock_db_pool, mock_vault_crypto, mock_litellm):
 
 
 @pytest.mark.asyncio
-async def test_proxy_missing_key(mock_db_pool, mock_litellm):
+async def test_proxy_missing_key(mock_db_pool, mock_litellm) -> None:
     """Test 404 when key not found."""
     mock_db_pool.fetchrow.return_value = None
 
@@ -79,7 +79,7 @@ async def test_proxy_missing_key(mock_db_pool, mock_litellm):
 
 
 @pytest.mark.asyncio
-async def test_proxy_circuit_breaker(mock_db_pool, mock_vault_crypto, mock_litellm):
+async def test_proxy_circuit_breaker(mock_db_pool, mock_vault_crypto, mock_litellm) -> None:
     """Test that circuit breaker opens after failures."""
     mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
 

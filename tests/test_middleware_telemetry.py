@@ -26,7 +26,7 @@ def mock_redis():
 
 
 @pytest.mark.asyncio
-async def test_log_telemetry_success(mock_redis):
+async def test_log_telemetry_success(mock_redis) -> None:
     """Test successful pushing of telemetry."""
     user_id = uuid.uuid4()
     auc_id = "proj-123"
@@ -50,7 +50,7 @@ async def test_log_telemetry_success(mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_log_telemetry_exception_handling(mock_redis):
+async def test_log_telemetry_exception_handling(mock_redis) -> None:
     """Test that exceptions are caught and logged (fire-and-forget)."""
     mock_redis.rpush.side_effect = Exception("Redis down")
 

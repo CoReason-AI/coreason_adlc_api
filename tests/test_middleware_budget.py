@@ -27,7 +27,7 @@ def mock_redis():
         yield client
 
 
-def test_check_budget_pass(mock_redis):
+def test_check_budget_pass(mock_redis) -> None:
     """Test that check passes when under budget."""
     user_id = uuid.uuid4()
     cost = 0.5
@@ -47,7 +47,7 @@ def test_check_budget_pass(mock_redis):
     assert args[1] == cost
 
 
-def test_check_budget_exceeded(mock_redis):
+def test_check_budget_exceeded(mock_redis) -> None:
     """Test that check raises 402 when budget exceeded."""
     user_id = uuid.uuid4()
     cost = 10.0
@@ -68,7 +68,7 @@ def test_check_budget_exceeded(mock_redis):
     assert call_args_list[1][0][1] == -cost
 
 
-def test_check_budget_redis_error(mock_redis):
+def test_check_budget_redis_error(mock_redis) -> None:
     """Test fail-closed behavior on Redis error."""
     user_id = uuid.uuid4()
     mock_redis.incrbyfloat.side_effect = RedisError("Connection failed")
@@ -80,7 +80,7 @@ def test_check_budget_redis_error(mock_redis):
     assert "Budget service unavailable" in exc.value.detail
 
 
-def test_check_budget_first_time(mock_redis):
+def test_check_budget_first_time(mock_redis) -> None:
     """Test that expiry is set on first charge."""
     user_id = uuid.uuid4()
     cost = 5.0
@@ -91,7 +91,7 @@ def test_check_budget_first_time(mock_redis):
     mock_redis.expire.assert_called_once()
 
 
-def test_check_budget_negative_cost(mock_redis):
+def test_check_budget_negative_cost(mock_redis) -> None:
     """Test that negative cost raises ValueError."""
     user_id = uuid.uuid4()
     with pytest.raises(ValueError):

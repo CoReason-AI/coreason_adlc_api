@@ -56,7 +56,7 @@ def mock_middleware():
         yield mock_budget, mock_proxy, mock_scrub, mock_log
 
 
-def test_interceptor_flow_success(mock_user_identity, mock_middleware):
+def test_interceptor_flow_success(mock_user_identity, mock_middleware) -> None:
     mock_budget, mock_proxy, mock_scrub, mock_log = mock_middleware
 
     payload = {

@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import litellm
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -61,7 +61,7 @@ async def chat_completions(
     # Spec: "Proxy & Determinism: Forward the request to the model provider."
     # Spec: "In-Memory PII Scrubbing... Replace detected entities... Scope: Memory only"
     # Usually we want to scrub input sent to LLM if it's external (Data Leakage Prevention).
-    # "The coreason-adlc-api acts as the Governance Enforcement Layer... between Tier 1 and Tier 3... abstracts PII Scanning"
+    # "The coreason-adlc-api acts as the Governance Enforcement Layer..."
     # "Toxic Telemetry Prevention... scrub data in-stream before it rests in the database."
     # It doesn't explicitly say "Scrub before sending to LLM".
     # It says "Logic Flow: Request -> Budget -> LiteLLM -> Presidio -> Redis".
@@ -130,7 +130,7 @@ async def chat_completions(
 
     # Return raw response to user?
     # Or scrubbed?
-    # "acts as Governance Enforcement Layer... The API must pass the raw request_payload and the response_payload to Microsoft Presidio... Replace... Scope: Memory only"
+    # "acts as Governance Enforcement Layer..."
     # BG-02: "Eliminate legal liability of storing PII in permanent logs."
     # Does NOT say "Prevent User from seeing PII".
     # Usually users are allowed to see what they generated.
@@ -143,4 +143,4 @@ async def chat_completions(
     # The requirement emphasizes "storing PII in permanent logs".
     # I will return the raw response object from LiteLLM.
 
-    return response
+    return cast(Dict[str, Any], response)

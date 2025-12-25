@@ -14,7 +14,7 @@ from unittest import mock
 from coreason_adlc_api.config import Settings
 
 
-def test_settings_defaults():
+def test_settings_defaults() -> None:
     """Test default values for new settings."""
     # We instantiate a new Settings object to avoid global state from import
     settings = Settings()
@@ -25,7 +25,7 @@ def test_settings_defaults():
     assert settings.REDIS_PASSWORD is None
     assert settings.DAILY_BUDGET_LIMIT == 50.0
 
-def test_settings_env_override():
+def test_settings_env_override() -> None:
     """Test that environment variables override defaults."""
     env_vars = {
         "REDIS_HOST": "redis-prod",

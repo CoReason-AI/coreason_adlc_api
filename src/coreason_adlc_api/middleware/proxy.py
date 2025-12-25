@@ -77,7 +77,7 @@ async def get_api_key_for_model(auc_id: str, model: str) -> str:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Secure Vault access failed."
-        )
+        ) from e
 
 
 async def execute_inference_proxy(
@@ -113,12 +113,12 @@ async def execute_inference_proxy(
 
         return response
 
-    except CircuitBreakerOpenError:
+    except CircuitBreakerOpenError as e:
         logger.error("Circuit Breaker Open for Inference Proxy")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Upstream model service is currently unstable. Please try again later."
-        )
+        ) from e
 
     except HTTPException:
         raise
@@ -130,4 +130,4 @@ async def execute_inference_proxy(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
-        )
+        ) from e

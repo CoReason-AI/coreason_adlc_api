@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import time
-from typing import Callable, Type
+from typing import Any, Callable, Type
 
 from loguru import logger
 
@@ -23,14 +23,14 @@ class AsyncCircuitBreaker:
     """
     A simple asyncio-compatible Circuit Breaker.
     """
-    def __init__(self, fail_max: int = 5, reset_timeout: int = 60):
+    def __init__(self, fail_max: int = 5, reset_timeout: float = 60) -> None:
         self.fail_max = fail_max
         self.reset_timeout = reset_timeout
         self.fail_counter = 0
         self.state = "closed"
         self.last_failure_time = 0.0
 
-    async def call(self, func: Callable, *args, **kwargs):
+    async def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Calls the async function, managing circuit state.
         """
@@ -44,20 +44,22 @@ class AsyncCircuitBreaker:
             result = await func(*args, **kwargs)
             if self.state == "half-open":
                 self.state = "closed"
+            # Reset counter on success if closed (prevents accumulation of intermittent errors)
+            if self.state == "closed":
                 self.fail_counter = 0
             return result
         except Exception as e:
             self._handle_failure()
             raise e
 
-    def _handle_failure(self):
+    def _handle_failure(self) -> None:
         self.fail_counter += 1
         self.last_failure_time = time.time()
         if self.fail_counter >= self.fail_max:
             self.state = "open"
             logger.warning(f"Circuit Breaker tripped. Failures: {self.fail_counter}")
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "AsyncCircuitBreaker":
         if self.state == "open":
             if time.time() - self.last_failure_time > self.reset_timeout:
                 self.state = "half-open"
@@ -65,12 +67,15 @@ class AsyncCircuitBreaker:
                 raise CircuitBreakerOpenError("Circuit is open")
         return self
 
-    async def __aexit__(self, exc_type: Type[BaseException] | None, exc_val: BaseException | None, exc_tb):
+    async def __aexit__(
+        self, exc_type: Type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
+    ) -> bool:
         if exc_type:
             # We treat any exception as a failure
             self._handle_failure()
         else:
             if self.state == "half-open":
                 self.state = "closed"
+            if self.state == "closed":
                 self.fail_counter = 0
         return False  # Propagate exception

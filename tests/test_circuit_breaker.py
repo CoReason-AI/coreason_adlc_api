@@ -15,7 +15,7 @@ from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, Ci
 
 
 @pytest.mark.asyncio
-async def test_cb_state_transition():
+async def test_cb_state_transition() -> None:
     cb = AsyncCircuitBreaker(fail_max=2, reset_timeout=0.1)
 
     # 1. Closed state, success
@@ -58,7 +58,7 @@ async def test_cb_state_transition():
 
 
 @pytest.mark.asyncio
-async def test_cb_half_open_failure():
+async def test_cb_half_open_failure() -> None:
     cb = AsyncCircuitBreaker(fail_max=1, reset_timeout=0.1)
 
     # Trip it

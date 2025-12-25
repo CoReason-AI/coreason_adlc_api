@@ -47,7 +47,7 @@ class PIIAnalyzer:
         return self._analyzer
 
 
-def scrub_pii_payload(text_payload: str) -> str:
+def scrub_pii_payload(text_payload: str | None) -> str | None:
     """
     Scans the payload for PII entities (PHONE, EMAIL, PERSON) and replaces them with <REDACTED {ENTITY_TYPE}>.
     Does NOT log the original text.
