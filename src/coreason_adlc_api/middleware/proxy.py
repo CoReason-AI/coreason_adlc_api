@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import random
 from typing import Any, Dict, List
 
 import litellm
@@ -22,10 +21,7 @@ from coreason_adlc_api.vault.crypto import VaultCrypto
 # Circuit Breaker Configuration
 # Threshold: 5 errors.
 # Reset timeout: 60 seconds.
-proxy_breaker = AsyncCircuitBreaker(
-    fail_max=5,
-    reset_timeout=60
-)
+proxy_breaker = AsyncCircuitBreaker(fail_max=5, reset_timeout=60)
 
 
 async def get_api_key_for_model(auc_id: str, model: str) -> str:
@@ -46,7 +42,8 @@ async def get_api_key_for_model(auc_id: str, model: str) -> str:
     # Let's assume we store keys by service_name (e.g. 'openai').
 
     try:
-        provider, _, _ = litellm.get_llm_provider(model)
+        # litellm.get_llm_provider returns (provider, model, api_key, api_base)
+        provider, _, _, _ = litellm.get_llm_provider(model)  # type: ignore[attr-defined]
     except Exception:
         # Fallback or strict?
         provider = model.split("/")[0] if "/" in model else "openai"
@@ -62,8 +59,7 @@ async def get_api_key_for_model(auc_id: str, model: str) -> str:
     if not row:
         logger.error(f"No API key found for project {auc_id} service {provider}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API Key not configured for {provider} in this project."
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"API Key not configured for {provider} in this project."
         )
 
     encrypted_value = row["encrypted_value"]
@@ -75,16 +71,12 @@ async def get_api_key_for_model(auc_id: str, model: str) -> str:
     except Exception as e:
         logger.error(f"Decryption failed for {auc_id}/{provider}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Secure Vault access failed."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Secure Vault access failed."
         ) from e
 
 
 async def execute_inference_proxy(
-    messages: List[Dict[str, Any]],
-    model: str,
-    auc_id: str,
-    user_context: Dict[str, Any] | None = None
+    messages: List[Dict[str, Any]], model: str, auc_id: str, user_context: Dict[str, Any] | None = None
 ) -> Any:
     """
     Proxies the inference request to the model provider via LiteLLM.
@@ -117,7 +109,7 @@ async def execute_inference_proxy(
         logger.error("Circuit Breaker Open for Inference Proxy")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Upstream model service is currently unstable. Please try again later."
+            detail="Upstream model service is currently unstable. Please try again later.",
         ) from e
 
     except HTTPException:
@@ -127,7 +119,4 @@ async def execute_inference_proxy(
         logger.error(f"Inference Proxy Error: {e}")
         # Map LiteLLM errors to HTTP status codes if needed
         # For now, 500
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        ) from e
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e

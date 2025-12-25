@@ -12,12 +12,11 @@ import redis
 
 from coreason_adlc_api.config import settings
 
-
 # Global Redis pool
 _redis_pool: redis.ConnectionPool | None = None
 
 
-def get_redis_client() -> redis.Redis:
+def get_redis_client() -> "redis.Redis[str]":
     """
     Creates and returns a Redis client using a shared connection pool.
     """
@@ -30,4 +29,5 @@ def get_redis_client() -> redis.Redis:
             password=settings.REDIS_PASSWORD,
             decode_responses=True,
         )
-    return redis.Redis(connection_pool=_redis_pool)
+    # Cast to Redis[str] because decode_responses=True in pool
+    return redis.Redis(connection_pool=_redis_pool)  # type: ignore[return-value]

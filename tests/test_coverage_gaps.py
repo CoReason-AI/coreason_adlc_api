@@ -7,14 +7,15 @@
 # Commercial use beyond a 30-day trial requires a separate license.
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
+import uuid
+from typing import Any
+from unittest import mock
 
 import pytest
-from unittest import mock
 from fastapi.testclient import TestClient
 
 from coreason_adlc_api.app import app
-from coreason_adlc_api.auth.identity import parse_and_validate_token, UserIdentity
-import uuid
+from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 
 # Ensure router is included (it was included in previous test file, but app state persists?
 # Usually best to include safe check or just rely on it being idempotent or already there)
@@ -24,54 +25,46 @@ import uuid
 
 client = TestClient(app)
 
+
 @pytest.fixture
-def mock_user_identity():
-    user = UserIdentity(
-        oid=uuid.uuid4(),
-        email="test@example.com",
-        groups=[uuid.uuid4()],
-        full_name="Test User"
-    )
+def mock_user_identity() -> Any:
+    user = UserIdentity(oid=uuid.uuid4(), email="test@example.com", groups=[uuid.uuid4()], full_name="Test User")
     app.dependency_overrides[parse_and_validate_token] = lambda: user
     yield user
     del app.dependency_overrides[parse_and_validate_token]
 
-def test_interceptor_proxy_exception(mock_user_identity) -> None:
-    """Test exception during proxy call (Lines 86-89 in interceptor.py)."""
-    with mock.patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail") as mock_budget, \
-         mock.patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy") as mock_proxy:
 
+def test_interceptor_proxy_exception(mock_user_identity: Any) -> None:
+    """Test exception during proxy call (Lines 86-89 in interceptor.py)."""
+    with (
+        mock.patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail") as mock_budget,
+        mock.patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy") as mock_proxy,
+    ):
         mock_budget.return_value = True
         mock_proxy.side_effect = Exception("Proxy Failure")
 
-        payload = {
-            "model": "gpt-4",
-            "messages": [],
-            "auc_id": "proj-1"
-        }
+        payload = {"model": "gpt-4", "messages": [], "auc_id": "proj-1"}
 
         # Should raise 500 or let exception propagate?
         # interceptor.py re-raises. FastAPI converts unhandled exceptions to 500.
         with pytest.raises(Exception, match="Proxy Failure"):
             client.post("/api/v1/chat/completions", json=payload)
 
-def test_interceptor_malformed_response(mock_user_identity) -> None:
-    """Test malformed response from LLM (Lines 95-96 in interceptor.py)."""
-    with mock.patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail") as mock_budget, \
-         mock.patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy") as mock_proxy, \
-         mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub, \
-         mock.patch("coreason_adlc_api.routers.interceptor.async_log_telemetry"):
 
+def test_interceptor_malformed_response(mock_user_identity: Any) -> None:
+    """Test malformed response from LLM (Lines 95-96 in interceptor.py)."""
+    with (
+        mock.patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail") as mock_budget,
+        mock.patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy") as mock_proxy,
+        mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
+        mock.patch("coreason_adlc_api.routers.interceptor.async_log_telemetry"),
+    ):
         mock_budget.return_value = True
         # Return response that lacks "choices"
         mock_proxy.return_value = {"error": "something"}
         mock_scrub.return_value = "scrubbed"
 
-        payload = {
-            "model": "gpt-4",
-            "messages": [],
-            "auc_id": "proj-1"
-        }
+        payload = {"model": "gpt-4", "messages": [], "auc_id": "proj-1"}
 
         response = client.post("/api/v1/chat/completions", json=payload)
 

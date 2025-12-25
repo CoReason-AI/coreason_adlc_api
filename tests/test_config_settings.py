@@ -25,6 +25,7 @@ def test_settings_defaults() -> None:
     assert settings.REDIS_PASSWORD is None
     assert settings.DAILY_BUDGET_LIMIT == 50.0
 
+
 def test_settings_env_override() -> None:
     """Test that environment variables override defaults."""
     env_vars = {

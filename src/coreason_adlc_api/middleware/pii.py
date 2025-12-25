@@ -9,14 +9,14 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 from loguru import logger
-from presidio_analyzer import AnalyzerEngine, RecognizerResult
-from presidio_analyzer.nlp_engine import NlpEngineProvider
+from presidio_analyzer import AnalyzerEngine
 
 
 class PIIAnalyzer:
     """
     Singleton wrapper for Microsoft Presidio Analyzer to ensure the model is loaded only once.
     """
+
     _instance = None
     _analyzer: AnalyzerEngine | None = None
 
@@ -60,9 +60,7 @@ def scrub_pii_payload(text_payload: str | None) -> str | None:
 
         # Analyze
         results = analyzer.analyze(
-            text=text_payload,
-            entities=["PHONE_NUMBER", "EMAIL_ADDRESS", "PERSON"],
-            language="en"
+            text=text_payload, entities=["PHONE_NUMBER", "EMAIL_ADDRESS", "PERSON"], language="en"
         )
 
         # Replace

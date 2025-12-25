@@ -12,7 +12,7 @@ import time
 from typing import Any, Dict, List, Optional, cast
 
 import litellm
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
@@ -104,8 +104,8 @@ async def chat_completions(
     # Let's simple-concat input messages for logging.
     input_text = "\n".join([m.get("content", "") for m in request.messages])
 
-    scrubbed_input = scrub_pii_payload(input_text)
-    scrubbed_output = scrub_pii_payload(response_content)
+    scrubbed_input = scrub_pii_payload(input_text) or ""
+    scrubbed_output = scrub_pii_payload(response_content) or ""
 
     # 6. Async Telemetry Logging
     latency_ms = int((time.time() - start_time) * 1000)
@@ -122,10 +122,7 @@ async def chat_completions(
         model_name=request.model,
         input_text=scrubbed_input,
         output_text=scrubbed_output,
-        metadata={
-            "cost_usd": real_cost,
-            "latency_ms": latency_ms
-        }
+        metadata={"cost_usd": real_cost, "latency_ms": latency_ms},
     )
 
     # Return raw response to user?

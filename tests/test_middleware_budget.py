@@ -7,27 +7,26 @@
 # Commercial use beyond a 30-day trial requires a separate license.
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
-
 import uuid
+from typing import Any
 from unittest import mock
 
 import pytest
 from fastapi import HTTPException
 from redis import RedisError
 
-from coreason_adlc_api.config import settings
 from coreason_adlc_api.middleware.budget import check_budget_guardrail
 
 
 @pytest.fixture
-def mock_redis():
+def mock_redis() -> Any:
     with mock.patch("coreason_adlc_api.middleware.budget.redis.Redis") as mock_redis_cls:
         client = mock.MagicMock()
         mock_redis_cls.return_value = client
         yield client
 
 
-def test_check_budget_pass(mock_redis) -> None:
+def test_check_budget_pass(mock_redis: Any) -> None:
     """Test that check passes when under budget."""
     user_id = uuid.uuid4()
     cost = 0.5
@@ -42,12 +41,12 @@ def test_check_budget_pass(mock_redis) -> None:
     mock_redis.incrbyfloat.assert_called_once()
     # Verify key format roughly
     args, _ = mock_redis.incrbyfloat.call_args
-    assert f"budget:" in args[0]
+    assert "budget:" in args[0]
     assert str(user_id) in args[0]
     assert args[1] == cost
 
 
-def test_check_budget_exceeded(mock_redis) -> None:
+def test_check_budget_exceeded(mock_redis: Any) -> None:
     """Test that check raises 402 when budget exceeded."""
     user_id = uuid.uuid4()
     cost = 10.0
@@ -68,7 +67,7 @@ def test_check_budget_exceeded(mock_redis) -> None:
     assert call_args_list[1][0][1] == -cost
 
 
-def test_check_budget_redis_error(mock_redis) -> None:
+def test_check_budget_redis_error(mock_redis: Any) -> None:
     """Test fail-closed behavior on Redis error."""
     user_id = uuid.uuid4()
     mock_redis.incrbyfloat.side_effect = RedisError("Connection failed")
@@ -80,7 +79,7 @@ def test_check_budget_redis_error(mock_redis) -> None:
     assert "Budget service unavailable" in exc.value.detail
 
 
-def test_check_budget_first_time(mock_redis) -> None:
+def test_check_budget_first_time(mock_redis: Any) -> None:
     """Test that expiry is set on first charge."""
     user_id = uuid.uuid4()
     cost = 5.0
@@ -91,7 +90,7 @@ def test_check_budget_first_time(mock_redis) -> None:
     mock_redis.expire.assert_called_once()
 
 
-def test_check_budget_negative_cost(mock_redis) -> None:
+def test_check_budget_negative_cost(mock_redis: Any) -> None:
     """Test that negative cost raises ValueError."""
     user_id = uuid.uuid4()
     with pytest.raises(ValueError):

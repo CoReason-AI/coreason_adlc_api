@@ -16,6 +16,7 @@ from loguru import logger
 
 class CircuitBreakerOpenError(Exception):
     """Raised when the circuit breaker is open."""
+
     pass
 
 
@@ -23,6 +24,7 @@ class AsyncCircuitBreaker:
     """
     A simple asyncio-compatible Circuit Breaker.
     """
+
     def __init__(self, fail_max: int = 5, reset_timeout: float = 60) -> None:
         self.fail_max = fail_max
         self.reset_timeout = reset_timeout
@@ -67,9 +69,7 @@ class AsyncCircuitBreaker:
                 raise CircuitBreakerOpenError("Circuit is open")
         return self
 
-    async def __aexit__(
-        self, exc_type: Type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
-    ) -> bool:
+    async def __aexit__(self, exc_type: Type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> bool:
         if exc_type:
             # We treat any exception as a failure
             self._handle_failure()

@@ -1,3 +1,5 @@
+from typing import Any
+
 # Copyright (c) 2025 CoReason, Inc.
 #
 # This software is proprietary and dual-licensed.
@@ -7,7 +9,6 @@
 # Commercial use beyond a 30-day trial requires a separate license.
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
-
 from unittest import mock
 
 import pytest
@@ -17,9 +18,10 @@ from coreason_adlc_api.middleware.pii import scrub_pii_payload
 
 
 @pytest.fixture
-def mock_analyzer():
+def mock_analyzer() -> Any:
     # Reset singleton state before test
     from coreason_adlc_api.middleware.pii import PIIAnalyzer
+
     PIIAnalyzer._instance = None
 
     with mock.patch("coreason_adlc_api.middleware.pii.AnalyzerEngine") as mock_engine_cls:
@@ -31,7 +33,7 @@ def mock_analyzer():
     PIIAnalyzer._instance = None
 
 
-def test_scrub_pii_no_entities(mock_analyzer) -> None:
+def test_scrub_pii_no_entities(mock_analyzer: Any) -> None:
     """Test scrubbing text with no PII."""
     text = "Hello world, this is a safe message."
     mock_analyzer.analyze.return_value = []
@@ -40,7 +42,7 @@ def test_scrub_pii_no_entities(mock_analyzer) -> None:
     assert result == text
 
 
-def test_scrub_pii_entities_replacement(mock_analyzer) -> None:
+def test_scrub_pii_entities_replacement(mock_analyzer: Any) -> None:
     """Test replacement of detected entities."""
     text = "Contact me at 555-0199 or john.doe@example.com."
 
@@ -61,13 +63,13 @@ def test_scrub_pii_entities_replacement(mock_analyzer) -> None:
     assert result == expected
 
 
-def test_scrub_pii_empty_input(mock_analyzer) -> None:
+def test_scrub_pii_empty_input(mock_analyzer: Any) -> None:
     """Test empty input returns empty."""
     assert scrub_pii_payload("") == ""
     assert scrub_pii_payload(None) is None
 
 
-def test_scrub_pii_exception(mock_analyzer) -> None:
+def test_scrub_pii_exception(mock_analyzer: Any) -> None:
     """Test error handling."""
     mock_analyzer.analyze.side_effect = Exception("Analyzer crashed")
 

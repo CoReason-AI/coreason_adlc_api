@@ -1,3 +1,5 @@
+from typing import Any
+
 # Copyright (c) 2025 CoReason, Inc.
 #
 # This software is proprietary and dual-licensed.
@@ -7,16 +9,16 @@
 # Commercial use beyond a 30-day trial requires a separate license.
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
+from unittest import mock
 
 import pytest
-from unittest import mock
 from fastapi import HTTPException
 
 from coreason_adlc_api.middleware.proxy import execute_inference_proxy, proxy_breaker
 
 
 @pytest.fixture
-def mock_db_pool():
+def mock_db_pool() -> Any:
     with mock.patch("coreason_adlc_api.middleware.proxy.get_pool") as mock_pool:
         pool_instance = mock.AsyncMock()
         mock_pool.return_value = pool_instance
@@ -24,7 +26,7 @@ def mock_db_pool():
 
 
 @pytest.fixture
-def mock_vault_crypto():
+def mock_vault_crypto() -> Any:
     with mock.patch("coreason_adlc_api.middleware.proxy.VaultCrypto") as mock_crypto:
         instance = mock.MagicMock()
         instance.decrypt_secret.return_value = "raw-api-key"
@@ -33,7 +35,7 @@ def mock_vault_crypto():
 
 
 @pytest.fixture
-def mock_litellm():
+def mock_litellm() -> Any:
     with mock.patch("coreason_adlc_api.middleware.proxy.litellm") as mock_llm:
         mock_llm.get_llm_provider.return_value = ("openai", "key", "conf")
         mock_llm.acompletion = mock.AsyncMock()
@@ -42,7 +44,7 @@ def mock_litellm():
 
 
 @pytest.mark.asyncio
-async def test_proxy_success(mock_db_pool, mock_vault_crypto, mock_litellm) -> None:
+async def test_proxy_success(mock_db_pool: Any, mock_vault_crypto: Any, mock_litellm: Any) -> None:
     """Test successful proxy execution."""
     # Setup DB
     mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
@@ -67,7 +69,7 @@ async def test_proxy_success(mock_db_pool, mock_vault_crypto, mock_litellm) -> N
 
 
 @pytest.mark.asyncio
-async def test_proxy_missing_key(mock_db_pool, mock_litellm) -> None:
+async def test_proxy_missing_key(mock_db_pool: Any, mock_litellm: Any) -> None:
     """Test 404 when key not found."""
     mock_db_pool.fetchrow.return_value = None
 
@@ -79,7 +81,7 @@ async def test_proxy_missing_key(mock_db_pool, mock_litellm) -> None:
 
 
 @pytest.mark.asyncio
-async def test_proxy_circuit_breaker(mock_db_pool, mock_vault_crypto, mock_litellm) -> None:
+async def test_proxy_circuit_breaker(mock_db_pool: Any, mock_vault_crypto: Any, mock_litellm: Any) -> None:
     """Test that circuit breaker opens after failures."""
     mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
 
@@ -89,10 +91,11 @@ async def test_proxy_circuit_breaker(mock_db_pool, mock_vault_crypto, mock_litel
 
     # Manually trip
     proxy_breaker.state = "open"
-    proxy_breaker.last_failure_time = 1234567890 # Long ago? No, wait.
+    proxy_breaker.last_failure_time = 1234567890  # Long ago? No, wait.
     # If last_failure_time is old, it might try half-open.
     # We want it to be RECENT to ensure it stays open.
     import time
+
     proxy_breaker.last_failure_time = time.time()
 
     # Next call should raise ServiceUnavailable (Circuit Open) immediately

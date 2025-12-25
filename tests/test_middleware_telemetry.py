@@ -7,9 +7,9 @@
 # Commercial use beyond a 30-day trial requires a separate license.
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
-
 import json
 import uuid
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -18,7 +18,7 @@ from coreason_adlc_api.middleware.telemetry import async_log_telemetry
 
 
 @pytest.fixture
-def mock_redis():
+def mock_redis() -> Any:
     with mock.patch("coreason_adlc_api.middleware.telemetry.get_redis_client") as mock_get_client:
         client = mock.MagicMock()
         mock_get_client.return_value = client
@@ -26,7 +26,7 @@ def mock_redis():
 
 
 @pytest.mark.asyncio
-async def test_log_telemetry_success(mock_redis) -> None:
+async def test_log_telemetry_success(mock_redis: Any) -> None:
     """Test successful pushing of telemetry."""
     user_id = uuid.uuid4()
     auc_id = "proj-123"
@@ -50,7 +50,7 @@ async def test_log_telemetry_success(mock_redis) -> None:
 
 
 @pytest.mark.asyncio
-async def test_log_telemetry_exception_handling(mock_redis) -> None:
+async def test_log_telemetry_exception_handling(mock_redis: Any) -> None:
     """Test that exceptions are caught and logged (fire-and-forget)."""
     mock_redis.rpush.side_effect = Exception("Redis down")
 

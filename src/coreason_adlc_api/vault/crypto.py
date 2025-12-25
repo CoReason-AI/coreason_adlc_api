@@ -69,6 +69,6 @@ class VaultCrypto:
             nonce = decoded[:12]
             ciphertext = decoded[12:]
             plaintext = self._aesgcm.decrypt(nonce, ciphertext, None)
-            return cast(str, plaintext.decode("utf-8"))
+            return plaintext.decode("utf-8")
         except Exception:
             raise ValueError("Decryption failed. Invalid key or corrupted data.") from None
