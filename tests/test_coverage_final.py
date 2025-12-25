@@ -1,0 +1,131 @@
+# Copyright (c) 2025 CoReason, Inc.
+#
+# This software is proprietary and dual-licensed.
+# Licensed under the Prosperity Public License 3.0 (the "License").
+# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
+# For details, see the LICENSE file.
+# Commercial use beyond a 30-day trial requires a separate license.
+#
+# Source Code: https://github.com/CoReason-AI/coreason_adlc_api
+
+import time
+from unittest import mock
+
+import pytest
+from fastapi import HTTPException
+
+from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
+from coreason_adlc_api.middleware.proxy import execute_inference_proxy, get_api_key_for_model, proxy_breaker
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_call_method() -> None:
+    """Test the 'call' method of AsyncCircuitBreaker which was missing coverage."""
+    cb = AsyncCircuitBreaker(fail_max=2, reset_timeout=0.1)
+
+    # 1. Success case
+    async def success_func() -> str:
+        return "ok"
+
+    res = await cb.call(success_func)
+    assert res == "ok"
+    assert cb.state == "closed"
+    assert cb.fail_counter == 0
+
+    # 2. Failure case
+    async def fail_func() -> None:
+        raise ValueError("fail")
+
+    with pytest.raises(ValueError):
+        await cb.call(fail_func)
+    assert cb.fail_counter == 1
+
+    with pytest.raises(ValueError):
+        await cb.call(fail_func)
+    assert cb.fail_counter == 2
+    assert cb.state == "open"
+
+    # 3. Call while open -> CircuitBreakerOpenError
+    with pytest.raises(CircuitBreakerOpenError):
+        await cb.call(success_func)
+
+    # 4. Wait for reset
+    import asyncio
+
+    await asyncio.sleep(0.2)
+
+    # 5. Half-open success
+    res = await cb.call(success_func)
+    assert res == "ok"
+    assert cb.state == "closed"
+    assert cb.fail_counter == 0
+
+
+@pytest.mark.asyncio
+async def test_get_api_key_decryption_failure() -> None:
+    """Test get_api_key_for_model when decryption fails."""
+    with (
+        mock.patch("coreason_adlc_api.middleware.proxy.get_pool") as mock_pool,
+        mock.patch("coreason_adlc_api.middleware.proxy.VaultCrypto") as mock_crypto_cls,
+    ):
+        # Correctly mock async fetchrow
+        mock_pool.return_value.fetchrow = mock.AsyncMock(return_value={"encrypted_value": "bad-key"})
+
+        # Mock instance raising error on decrypt
+        mock_instance = mock.MagicMock()
+        mock_instance.decrypt_secret.side_effect = Exception("Decryption Error")
+        mock_crypto_cls.return_value = mock_instance
+
+        with pytest.raises(HTTPException) as exc:
+            await get_api_key_for_model("proj-1", "gpt-4")
+
+        assert exc.value.status_code == 500
+        assert "Secure Vault access failed" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_proxy_generic_exception() -> None:
+    """Test execute_inference_proxy handling generic exception from inside block."""
+    with (
+        mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key,
+        mock.patch("coreason_adlc_api.middleware.proxy.litellm.acompletion") as mock_completion,
+    ):
+        mock_get_key.return_value = "key"
+        mock_completion.side_effect = Exception("Unexpected Error")
+
+        # Reset breaker state
+        proxy_breaker.state = "closed"
+        proxy_breaker.fail_counter = 0
+
+        with pytest.raises(HTTPException) as exc:
+            await execute_inference_proxy([], "gpt-4", "proj-1")
+
+        assert exc.value.status_code == 500
+        assert "Unexpected Error" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_proxy_breaker_open_exception() -> None:
+    """Explicitly test the CircuitBreakerOpenError catch block in proxy."""
+    # We can mock the breaker instance on the proxy module to force it to raise
+
+    # But proxy_breaker is imported.
+    # We can manually set state to open.
+    proxy_breaker.state = "open"
+    proxy_breaker.last_failure_time = time.time()
+
+    # Need to mock get_api_key otherwise it might fail first (if we didn't mock DB)
+    # But get_api_key is called BEFORE breaker check?
+    # No:
+    # api_key = await get_api_key_for_model(...)
+    # async with proxy_breaker: ...
+    # So we need get_api_key to succeed.
+
+    with mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key:
+        mock_get_key.return_value = "key"
+
+        with pytest.raises(HTTPException) as exc:
+            await execute_inference_proxy([], "gpt-4", "proj-1")
+
+        assert exc.value.status_code == 503
+        assert "Upstream model service is currently unstable" in exc.value.detail

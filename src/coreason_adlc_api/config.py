@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "coreason_db"
 
+    # Redis (Telemetry & Budget)
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    # Optional password if needed
+    REDIS_PASSWORD: str | None = None
+
+    # Governance
+    DAILY_BUDGET_LIMIT: float = 50.0  # Dollars
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
