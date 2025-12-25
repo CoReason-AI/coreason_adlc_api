@@ -10,7 +10,6 @@
 
 import base64
 import os
-from typing import cast
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
