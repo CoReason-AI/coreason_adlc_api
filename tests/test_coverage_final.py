@@ -8,12 +8,15 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import pytest
+import time
 from unittest import mock
+
+import pytest
 from fastapi import HTTPException
+
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.middleware.proxy import execute_inference_proxy, get_api_key_for_model, proxy_breaker
-import time
+
 
 @pytest.mark.asyncio
 async def test_circuit_breaker_call_method() -> None:
@@ -48,6 +51,7 @@ async def test_circuit_breaker_call_method() -> None:
 
     # 4. Wait for reset
     import asyncio
+
     await asyncio.sleep(0.2)
 
     # 5. Half-open success
@@ -60,9 +64,10 @@ async def test_circuit_breaker_call_method() -> None:
 @pytest.mark.asyncio
 async def test_get_api_key_decryption_failure() -> None:
     """Test get_api_key_for_model when decryption fails."""
-    with mock.patch("coreason_adlc_api.middleware.proxy.get_pool") as mock_pool, \
-         mock.patch("coreason_adlc_api.middleware.proxy.VaultCrypto") as mock_crypto_cls:
-
+    with (
+        mock.patch("coreason_adlc_api.middleware.proxy.get_pool") as mock_pool,
+        mock.patch("coreason_adlc_api.middleware.proxy.VaultCrypto") as mock_crypto_cls,
+    ):
         # Correctly mock async fetchrow
         mock_pool.return_value.fetchrow = mock.AsyncMock(return_value={"encrypted_value": "bad-key"})
 
@@ -81,9 +86,10 @@ async def test_get_api_key_decryption_failure() -> None:
 @pytest.mark.asyncio
 async def test_proxy_generic_exception() -> None:
     """Test execute_inference_proxy handling generic exception from inside block."""
-    with mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key, \
-         mock.patch("coreason_adlc_api.middleware.proxy.litellm.acompletion") as mock_completion:
-
+    with (
+        mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key,
+        mock.patch("coreason_adlc_api.middleware.proxy.litellm.acompletion") as mock_completion,
+    ):
         mock_get_key.return_value = "key"
         mock_completion.side_effect = Exception("Unexpected Error")
 
