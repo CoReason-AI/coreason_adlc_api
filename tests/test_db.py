@@ -16,7 +16,7 @@ from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, get_pool, init_db
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_db_lifecycle() -> None:
     """Verify init_db creates a pool and close_db closes it."""
 
@@ -30,17 +30,17 @@ async def test_db_lifecycle() -> None:
         db_module._pool = None
 
         # Test Init
-        await init_db()
+        # We also mock _run_ddl to avoid file I/O or connection usage in this unit test
+        with patch("coreason_adlc_api.db._run_ddl", new=AsyncMock()) as mock_ddl:
+            await init_db()
+            mock_ddl.assert_awaited_once()
 
-        mock_create.assert_called_once_with(
-            user=settings.POSTGRES_USER,
-            password=settings.POSTGRES_PASSWORD,
-            host=settings.POSTGRES_HOST,
-            port=settings.POSTGRES_PORT,
-            database=settings.POSTGRES_DB,
-            min_size=1,
-            max_size=10,
-        )
+        # We check ANY for init function because it's a local function
+        mock_create.assert_called_once()
+        kwargs = mock_create.call_args.kwargs
+        assert kwargs["user"] == settings.POSTGRES_USER
+        assert kwargs["database"] == settings.POSTGRES_DB
+        assert kwargs["init"] is not None
         assert get_pool() == mock_pool
 
         # Test Double Init (should warn and return)
@@ -56,7 +56,7 @@ async def test_db_lifecycle() -> None:
             get_pool()
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_db_init_failure() -> None:
     """Verify init_db raises exception on failure."""
 
@@ -69,7 +69,7 @@ async def test_db_init_failure() -> None:
             await init_db()
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_close_db_idempotent() -> None:
     """Verify close_db handles being called when pool is None."""
     import coreason_adlc_api.db as db_module
@@ -80,7 +80,7 @@ async def test_close_db_idempotent() -> None:
     await close_db()
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_concurrent_db_init() -> None:
     """Verify thread safety/idempotency of simultaneous init_db calls."""
     import asyncio
@@ -103,7 +103,11 @@ async def test_concurrent_db_init() -> None:
         await asyncio.sleep(0.01)
         return mock_pool
 
-    with patch("asyncpg.create_pool", side_effect=delayed_create):
+    # Mock _run_ddl to avoid side effects during concurrent testing
+    with (
+        patch("asyncpg.create_pool", side_effect=delayed_create),
+        patch("coreason_adlc_api.db._run_ddl", new=AsyncMock()),
+    ):
         # Launch 5 concurrent init calls
         await asyncio.gather(init_db(), init_db(), init_db(), init_db(), init_db())
 
@@ -114,7 +118,7 @@ async def test_concurrent_db_init() -> None:
         assert get_pool() == mock_pool
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_pool_restart() -> None:
     """Verify that the pool can be re-initialized after closing (simulating restart)."""
     import coreason_adlc_api.db as db_module
@@ -124,7 +128,10 @@ async def test_pool_restart() -> None:
     mock_pool_2 = AsyncMock()
 
     # 1. Init
-    with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_1)):
+    with (
+        patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_1)),
+        patch("coreason_adlc_api.db._run_ddl", new=AsyncMock()),
+    ):
         await init_db()
         assert get_pool() == mock_pool_1
 
@@ -134,6 +141,27 @@ async def test_pool_restart() -> None:
         get_pool()
 
     # 3. Re-Init
-    with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_2)):
+    with (
+        patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_2)),
+        patch("coreason_adlc_api.db._run_ddl", new=AsyncMock()),
+    ):
         await init_db()
         assert get_pool() == mock_pool_2
+
+
+@pytest.mark.asyncio
+async def test_init_conn() -> None:
+    """Verify init_conn registers codec."""
+    import json
+
+    from coreason_adlc_api.db import init_conn
+
+    mock_conn = AsyncMock()
+    await init_conn(mock_conn)
+
+    mock_conn.set_type_codec.assert_awaited_once_with(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )

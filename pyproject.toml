@@ -18,6 +18,8 @@ uvicorn = {extras = ["standard"], version = "^0.40.0"}
 pydantic-settings = "^2.12.0"
 cryptography = "^46.0.3"
 asyncpg = "^0.31.0"
+pyjwt = "^2.10.1"
+email-validator = "^2.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
@@ -61,7 +63,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "I"]
-ignore = []
+ignore = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -16,6 +16,7 @@ from loguru import logger
 
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, init_db
+from coreason_adlc_api.routers import auth, vault, workbench
 
 
 @asynccontextmanager
@@ -51,12 +52,16 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.DEBUG else None,
     )
 
-    @app.get("/health")  # type: ignore[misc]
+    @app.get("/health")
     async def health_check() -> dict[str, str]:
         """
         Basic health check endpoint.
         """
         return {"status": "ok", "env": settings.APP_ENV}
+
+    app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(vault.router, prefix="/api/v1")
+    app.include_router(workbench.router, prefix="/api/v1")
 
     return app
 

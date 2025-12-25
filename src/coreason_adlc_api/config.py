@@ -11,7 +11,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):  # type: ignore[misc]
+class Settings(BaseSettings):
     """
     Application Configuration based on Pydantic Settings.
     Reads from environment variables.
