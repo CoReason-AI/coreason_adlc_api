@@ -19,7 +19,7 @@ from coreason_adlc_api.vault.crypto import VaultCrypto
 TEST_KEY = secrets.token_hex(32)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def vault() -> Generator[VaultCrypto, None, None]:
     yield VaultCrypto(key_hex=TEST_KEY)
 
