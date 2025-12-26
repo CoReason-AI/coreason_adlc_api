@@ -1,0 +1,14 @@
+# Coreason ADLC Compliance Definition
+# Authoritative Version: 1.0.0
+
+allowlists:
+  libraries:
+    - numpy
+    - pandas
+    - requests
+    - pydantic
+
+  domains:
+    - api.openai.com
+    - api.anthropic.com
+    - pypi.org
