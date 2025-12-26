@@ -68,9 +68,11 @@ def test_lifespan() -> None:
     # We must mock init_db and close_db to prevent actual DB connection
     with patch("coreason_adlc_api.app.init_db", new=AsyncMock()) as mock_init:
         with patch("coreason_adlc_api.app.close_db", new=AsyncMock()) as mock_close:
-            with TestClient(app) as _:
-                # Trigger startup
-                pass
+            with patch("coreason_adlc_api.app.telemetry_worker", new=AsyncMock()) as mock_worker:
+                with TestClient(app) as _:
+                    # Trigger startup
+                    pass
 
-            mock_init.assert_called_once()
-            mock_close.assert_called_once()
+                mock_init.assert_called_once()
+                mock_close.assert_called_once()
+                mock_worker.assert_called_once()
