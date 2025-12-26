@@ -16,6 +16,7 @@ import jwt
 import pytest
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import JWT_ALGORITHM, JWT_SECRET
+from coreason_adlc_api.routers.workbench import _get_user_roles
 from coreason_adlc_api.workbench.schemas import DraftResponse
 from httpx import ASGITransport, AsyncClient
 
@@ -243,9 +244,6 @@ async def test_update_draft_not_found_router(mock_auth_header: str) -> None:
             assert resp.status_code == 404
 
 
-from coreason_adlc_api.routers.workbench import _get_user_roles
-
-
 @pytest.mark.asyncio
 async def test_get_user_roles_helper() -> None:
     mock_pool = AsyncMock()
@@ -253,6 +251,7 @@ async def test_get_user_roles_helper() -> None:
     with patch("coreason_adlc_api.routers.workbench.get_pool", return_value=mock_pool):
         roles = await _get_user_roles([uuid.uuid4()])
         assert roles == ["MANAGER"]
+
 
 @pytest.mark.asyncio
 async def test_list_drafts_forbidden(mock_auth_header: str) -> None:
