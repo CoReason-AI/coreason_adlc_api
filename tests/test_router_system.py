@@ -13,7 +13,6 @@ import os
 from unittest.mock import patch
 
 import pytest
-import yaml
 from httpx import ASGITransport, AsyncClient
 
 from coreason_adlc_api.app import app
@@ -27,7 +26,7 @@ async def test_get_compliance_success() -> None:
     # __file__ is /app/tests/test_router_system.py
     # Root is /app
     # Compliance is /app/src/coreason_adlc_api/compliance.yaml
-    base_path = os.path.dirname(os.path.dirname(__file__)) # /app
+    base_path = os.path.dirname(os.path.dirname(__file__))  # /app
     compliance_path = os.path.join(base_path, "src", "coreason_adlc_api", "compliance.yaml")
 
     with open(compliance_path, "rb") as f:
@@ -51,3 +50,14 @@ async def test_compliance_missing_file() -> None:
             response = await ac.get("/api/v1/system/compliance")
             assert response.status_code == 500
             assert "Compliance definition file missing" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_compliance_read_error() -> None:
+    """Verify 500 error if reading/parsing fails."""
+    # Mock open to raise exception
+    with patch("builtins.open", side_effect=IOError("Disk read failed")):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.get("/api/v1/system/compliance")
+            assert response.status_code == 500
+            assert "Failed to process compliance file" in response.json()["detail"]

@@ -9,7 +9,6 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import pytest
-
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker
 
 

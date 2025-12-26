@@ -9,9 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import sys
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from coreason_adlc_api.main import main, start
 
@@ -29,17 +27,14 @@ def test_start_command() -> None:
 
 def test_main_start_arg() -> None:
     """Verify that main() calls start() when 'start' arg is provided."""
-    with patch("sys.argv", ["coreason-api", "start"]), \
-         patch("coreason_adlc_api.main.start") as mock_start:
+    with patch("sys.argv", ["coreason-api", "start"]), patch("coreason_adlc_api.main.start") as mock_start:
         main()
         mock_start.assert_called_once()
 
 
 def test_main_invalid_arg() -> None:
     """Verify that main() exits with 1 when invalid arg is provided."""
-    with patch("sys.argv", ["coreason-api", "invalid"]), \
-         patch("sys.exit") as mock_exit:
-
+    with patch("sys.argv", ["coreason-api", "invalid"]), patch("sys.exit") as mock_exit:
         # Capture print output if needed, or just verify exit
         with patch("builtins.print") as mock_print:
             main()
@@ -50,10 +45,8 @@ def test_main_invalid_arg() -> None:
 
 def test_main_no_arg() -> None:
     """Verify that main() exits with 1 when no arg is provided."""
-    with patch("sys.argv", ["coreason-api"]), \
-         patch("sys.exit") as mock_exit:
-
-        with patch("builtins.print") as mock_print:
+    with patch("sys.argv", ["coreason-api"]), patch("sys.exit") as mock_exit:
+        with patch("builtins.print"):
             main()
 
         mock_exit.assert_called_once_with(1)

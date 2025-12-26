@@ -14,13 +14,12 @@ from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import JWT_ALGORITHM, JWT_SECRET
 from coreason_adlc_api.routers import workbench
 from coreason_adlc_api.workbench.locking import AccessMode
 from coreason_adlc_api.workbench.schemas import DraftResponse
+from httpx import ASGITransport, AsyncClient
 
 
 # Helper to generate tokens with specific claims (roles)
@@ -97,7 +96,9 @@ async def test_get_draft_locked_access_denied() -> None:
     # Service raises 423
     with (
         patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=[])),
-        patch.object(workbench, "get_draft_by_id", side_effect=HTTPException(status_code=423, detail="Locked by User A")),
+        patch.object(
+            workbench, "get_draft_by_id", side_effect=HTTPException(status_code=423, detail="Locked by User A")
+        ),
     ):
         token = generate_token(developer_uuid, [])
 

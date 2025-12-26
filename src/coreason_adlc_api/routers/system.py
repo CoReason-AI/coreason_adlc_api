@@ -10,6 +10,7 @@
 
 import hashlib
 import os
+from typing import Any, Dict
 
 import yaml
 from fastapi import APIRouter, HTTPException, status
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/system", tags=["System & Compliance"])
 
 class ComplianceResponse(BaseModel):
     checksum_sha256: str
-    allowlists: dict
+    allowlists: Dict[str, Any]
 
 
 @router.get("/compliance", response_model=ComplianceResponse)

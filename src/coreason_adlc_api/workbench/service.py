@@ -12,11 +12,10 @@ import json
 from typing import Any, List, Optional
 from uuid import UUID
 
-from fastapi import HTTPException
-
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.workbench.locking import acquire_draft_lock, verify_lock_for_update
 from coreason_adlc_api.workbench.schemas import DraftCreate, DraftResponse, DraftUpdate
+from fastapi import HTTPException
 
 
 async def create_draft(draft: DraftCreate, user_uuid: UUID) -> DraftResponse:
