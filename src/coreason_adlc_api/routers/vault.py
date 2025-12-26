@@ -10,10 +10,10 @@
 
 import datetime
 
-from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
+from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
 from coreason_adlc_api.vault.schemas import CreateSecretRequest, SecretResponse
 from coreason_adlc_api.vault.service import store_secret
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 router = APIRouter(prefix="/vault", tags=["Vault"])
 
@@ -27,8 +27,12 @@ async def create_or_update_secret(
     Requires Authentication.
     """
     # Authorization check: Does user have access to this auc_id?
-    # TODO: In real implementation, check identity.groups against auc_id via map_groups_to_projects
-    # For now, we assume if they can login, they can add secrets (Atomic Unit 2 scope)
+    allowed_projects = await map_groups_to_projects(identity.groups)
+    if request.auc_id not in allowed_projects:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User is not authorized to access project {request.auc_id}",
+        )
 
     secret_id = await store_secret(
         auc_id=request.auc_id,
