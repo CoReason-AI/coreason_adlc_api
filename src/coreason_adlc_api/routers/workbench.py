@@ -10,7 +10,7 @@
 
 from uuid import UUID
 
-from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
+from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.workbench.locking import refresh_lock
 from coreason_adlc_api.workbench.schemas import DraftCreate, DraftResponse, DraftUpdate
@@ -20,14 +20,27 @@ from fastapi import APIRouter, Depends, HTTPException, status
 router = APIRouter(prefix="/workbench", tags=["Workbench"])
 
 
+async def _verify_project_access(identity: UserIdentity, auc_id: str) -> None:
+    """
+    Verifies that the user has access to the given project (AUC ID).
+    """
+    allowed_projects = await map_groups_to_projects(identity.groups)
+    if auc_id not in allowed_projects:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User is not authorized to access project {auc_id}",
+        )
+
+
 @router.get("/drafts", response_model=list[DraftResponse])
 async def list_drafts(auc_id: str, identity: UserIdentity = Depends(parse_and_validate_token)) -> list[DraftResponse]:
     """
     Returns list of drafts filterable by auc_id.
     """
     # Authorization: User must have access to auc_id
-    # TODO: Check identity.groups via map_groups logic
-    return await get_drafts(auc_id)
+    await _verify_project_access(identity, auc_id)
+    result = await get_drafts(auc_id)
+    return result
 
 
 @router.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)
@@ -37,6 +50,7 @@ async def create_new_draft(
     """
     Creates a new agent draft.
     """
+    await _verify_project_access(identity, draft.auc_id)
     return await create_draft(draft, identity.oid)
 
 
@@ -51,6 +65,10 @@ async def get_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_v
     draft = await get_draft_by_id(draft_id, identity.oid, roles)
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
+
+    # Verify Access to the draft's project
+    await _verify_project_access(identity, draft.auc_id)
+
     return draft
 
 
@@ -62,6 +80,14 @@ async def update_existing_draft(
     Updates draft content.
     (Requires active Lock)
     """
+    # Check access by fetching the draft briefly
+    # Note: Optimization could be done here, but robustness first.
+    current_draft = await get_draft_by_id(draft_id, identity.oid, [])
+    if not current_draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    await _verify_project_access(identity, current_draft.auc_id)
+
     return await update_draft(draft_id, update, identity.oid)
 
 

@@ -35,8 +35,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start Telemetry Worker
     telemetry_task = asyncio.create_task(telemetry_worker())
 
-    # Placeholder for Vault Initialization
-    # Placeholder for Enterprise License Check
+    # Enterprise License Check (BC-03)
+    if settings.ENTERPRISE_LICENSE_KEY:
+        logger.info("Enterprise Mode Enabled. SSO and Remote Features Active.")
+    else:
+        logger.info("Community Mode Enabled. Features restricted to local storage.")
 
     yield
 
