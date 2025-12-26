@@ -11,11 +11,12 @@
 from typing import Any, Dict, List
 
 import litellm
+from fastapi import HTTPException, status
+from loguru import logger
+
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.vault.crypto import VaultCrypto
-from fastapi import HTTPException, status
-from loguru import logger
 
 # Circuit Breaker Configuration
 # Threshold: 5 errors.
@@ -42,7 +43,7 @@ async def get_api_key_for_model(auc_id: str, model: str) -> str:
 
     try:
         # litellm.get_llm_provider returns (provider, model, api_key, api_base)
-        provider, _, _, _ = litellm.get_llm_provider(model)
+        provider, _, _, _ = litellm.get_llm_provider(model)  # type: ignore[attr-defined]
     except Exception:
         # Fallback or strict?
         provider = model.split("/")[0] if "/" in model else "openai"

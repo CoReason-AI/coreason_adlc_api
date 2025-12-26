@@ -30,4 +30,4 @@ def get_redis_client() -> "redis.Redis[str]":
             decode_responses=True,
         )
     # Cast to Redis[str] because decode_responses=True in pool
-    return redis.Redis(connection_pool=_redis_pool)
+    return redis.Redis(connection_pool=_redis_pool)  # type: ignore[return-value]
