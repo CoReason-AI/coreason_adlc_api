@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import sys
 from unittest.mock import patch
 
 from coreason_adlc_api.main import main, start
