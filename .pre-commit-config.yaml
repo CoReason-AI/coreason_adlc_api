@@ -8,7 +8,7 @@ repos:
       - id: check-toml
       - id: check-json
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.2
+    rev: v0.4.8
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
@@ -17,7 +17,17 @@ repos:
     rev: v1.18.2
     hooks:
       - id: mypy
-        additional_dependencies: [pydantic>=2.0, pydantic-settings, fastapi, types-requests, pytest, pytest-asyncio]
+        additional_dependencies:
+          - pydantic>=2.0
+          - pydantic-settings
+          - fastapi
+          - types-requests
+          - pytest
+          - pytest-asyncio
+          - types-PyYAML
+          - types-redis
+          - redis
+          - litellm
   - repo: https://github.com/AleksaC/hadolint-py
     rev: v2.14.0
     hooks:

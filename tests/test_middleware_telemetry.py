@@ -13,7 +13,6 @@ from typing import Any
 from unittest import mock
 
 import pytest
-
 from coreason_adlc_api.middleware.telemetry import async_log_telemetry
 
 

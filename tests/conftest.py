@@ -1,7 +1,6 @@
 from typing import Generator
 
 import pytest
-
 from coreason_adlc_api.middleware.proxy import proxy_breaker
 
 

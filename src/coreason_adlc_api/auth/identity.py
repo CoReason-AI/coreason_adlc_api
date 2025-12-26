@@ -12,11 +12,10 @@ from typing import List
 from uuid import UUID
 
 import jwt
-from fastapi import Header, HTTPException, status
-from loguru import logger
-
 from coreason_adlc_api.auth.schemas import UserIdentity
 from coreason_adlc_api.db import get_pool
+from fastapi import Header, HTTPException, status
+from loguru import logger
 
 __all__ = [
     "UserIdentity",
