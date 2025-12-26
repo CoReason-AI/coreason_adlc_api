@@ -63,6 +63,7 @@ async def test_get_draft_safe_view_integration() -> None:
     with (
         patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=["MANAGER"])),
         patch.object(workbench, "get_draft_by_id", new=AsyncMock(return_value=mock_resp_obj)) as mock_service,
+        patch.object(workbench, "map_groups_to_projects", new=AsyncMock(return_value=["project-alpha"])),
     ):
         manager_token = generate_token(manager_uuid, ["MANAGER_GROUP"])
 
@@ -131,6 +132,7 @@ async def test_get_draft_edit_mode() -> None:
     with (
         patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=[])),
         patch.object(workbench, "get_draft_by_id", new=AsyncMock(return_value=mock_resp_obj)),
+        patch.object(workbench, "map_groups_to_projects", new=AsyncMock(return_value=["project-alpha"])),
     ):
         token = generate_token(user_uuid, [])
 

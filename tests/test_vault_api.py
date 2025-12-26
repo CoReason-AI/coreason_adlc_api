@@ -40,7 +40,12 @@ async def test_store_secret_api(mock_auth_header: str) -> None:
     """Test POST /vault/secrets endpoint via API."""
 
     # Mock store_secret service call
-    with patch("coreason_adlc_api.routers.vault.store_secret", new=AsyncMock(return_value=uuid.uuid4())) as mock_store:
+    with (
+        patch("coreason_adlc_api.routers.vault.store_secret", new=AsyncMock(return_value=uuid.uuid4())) as mock_store,
+        patch(
+            "coreason_adlc_api.routers.vault.map_groups_to_projects", new=AsyncMock(return_value=["project-omega"])
+        ),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {"auc_id": "project-omega", "service_name": "openai", "raw_api_key": "sk-test-key"}
             resp = await ac.post("/api/v1/vault/secrets", json=payload, headers={"Authorization": mock_auth_header})
@@ -160,3 +165,15 @@ async def test_store_secret_no_id_returned() -> None:
             await store_secret("project-omega", "openai", "raw-key", uuid.uuid4())
 
         assert exc.value.status_code == 500
+
+@pytest.mark.asyncio
+async def test_store_secret_api_forbidden(mock_auth_header: str) -> None:
+    """Test POST /vault/secrets endpoint - Forbidden."""
+    with patch(
+        "coreason_adlc_api.routers.vault.map_groups_to_projects", new=AsyncMock(return_value=["other-project"])
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            payload = {"auc_id": "project-omega", "service_name": "openai", "raw_api_key": "sk-test-key"}
+            resp = await ac.post("/api/v1/vault/secrets", json=payload, headers={"Authorization": mock_auth_header})
+
+            assert resp.status_code == 403

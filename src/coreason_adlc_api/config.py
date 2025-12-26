@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     # Governance
     DAILY_BUDGET_LIMIT: float = 50.0  # Dollars
+    ENTERPRISE_LICENSE_KEY: str | None = None
 
     # Logging
     LOG_LEVEL: str = "INFO"

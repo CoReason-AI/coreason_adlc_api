@@ -47,9 +47,15 @@ async def test_create_draft(mock_auth_header: str) -> None:
         updated_at=datetime.datetime.now(),
     )
 
-    with patch(
-        "coreason_adlc_api.routers.workbench.create_draft", new=AsyncMock(return_value=mock_response)
-    ) as mock_create:
+    with (
+        patch(
+            "coreason_adlc_api.routers.workbench.create_draft", new=AsyncMock(return_value=mock_response)
+        ) as mock_create,
+        patch(
+            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            new=AsyncMock(return_value=["project-alpha"]),
+        ),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {"auc_id": "project-alpha", "title": "My Agent", "oas_content": {"info": "test"}}
             resp = await ac.post("/api/v1/workbench/drafts", json=payload, headers={"Authorization": mock_auth_header})
@@ -74,7 +80,13 @@ async def test_list_drafts(mock_auth_header: str) -> None:
         )
     ]
 
-    with patch("coreason_adlc_api.routers.workbench.get_drafts", new=AsyncMock(return_value=mock_list)):
+    with (
+        patch("coreason_adlc_api.routers.workbench.get_drafts", new=AsyncMock(return_value=mock_list)),
+        patch(
+            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            new=AsyncMock(return_value=["project-alpha"]),
+        ),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(
                 "/api/v1/workbench/drafts?auc_id=project-alpha", headers={"Authorization": mock_auth_header}
@@ -98,7 +110,14 @@ async def test_get_draft_by_id(mock_auth_header: str) -> None:
         updated_at=datetime.datetime.now(),
     )
 
-    with patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)):
+    with (
+        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
+        patch(
+            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            new=AsyncMock(return_value=["project-alpha"]),
+        ),
+        patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock(return_value=[])),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(f"/api/v1/workbench/drafts/{draft_id}", headers={"Authorization": mock_auth_header})
             assert resp.status_code == 200
@@ -107,7 +126,10 @@ async def test_get_draft_by_id(mock_auth_header: str) -> None:
 
 @pytest.mark.asyncio
 async def test_get_draft_not_found(mock_auth_header: str) -> None:
-    with patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=None)):
+    with (
+        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=None)),
+        patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock(return_value=[])),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(f"/api/v1/workbench/drafts/{uuid.uuid4()}", headers={"Authorization": mock_auth_header})
             assert resp.status_code == 404
@@ -126,7 +148,14 @@ async def test_update_draft(mock_auth_header: str) -> None:
         updated_at=datetime.datetime.now(),
     )
 
-    with patch("coreason_adlc_api.routers.workbench.update_draft", new=AsyncMock(return_value=mock_resp)):
+    with (
+        patch("coreason_adlc_api.routers.workbench.update_draft", new=AsyncMock(return_value=mock_resp)),
+        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
+        patch(
+            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            new=AsyncMock(return_value=["project-alpha"]),
+        ),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.put(
                 f"/api/v1/workbench/drafts/{draft_id}",
@@ -171,8 +200,26 @@ async def test_manager_cannot_update_locked_draft(mock_auth_header: str) -> None
 
     from fastapi import HTTPException
 
-    with patch(
-        "coreason_adlc_api.routers.workbench.update_draft", side_effect=HTTPException(status_code=423, detail="Locked")
+    mock_resp = DraftResponse(
+        draft_id=draft_id,
+        user_uuid=uuid.uuid4(),
+        auc_id="project-alpha",
+        title="Manager Takeover",
+        oas_content={},
+        created_at=datetime.datetime.now(),
+        updated_at=datetime.datetime.now(),
+    )
+
+    with (
+        patch(
+            "coreason_adlc_api.routers.workbench.update_draft",
+            side_effect=HTTPException(status_code=423, detail="Locked"),
+        ),
+        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
+        patch(
+            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            new=AsyncMock(return_value=["project-alpha"]),
+        ),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.put(
@@ -182,3 +229,39 @@ async def test_manager_cannot_update_locked_draft(mock_auth_header: str) -> None
             )
             assert resp.status_code == 423
             assert "Locked" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_update_draft_not_found_router(mock_auth_header: str) -> None:
+    with patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=None)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.put(
+                f"/api/v1/workbench/drafts/{uuid.uuid4()}",
+                json={"title": "Updated Title"},
+                headers={"Authorization": mock_auth_header},
+            )
+            assert resp.status_code == 404
+
+
+from coreason_adlc_api.routers.workbench import _get_user_roles
+
+
+@pytest.mark.asyncio
+async def test_get_user_roles_helper() -> None:
+    mock_pool = AsyncMock()
+    mock_pool.fetch.return_value = [{"role_name": "MANAGER"}]
+    with patch("coreason_adlc_api.routers.workbench.get_pool", return_value=mock_pool):
+        roles = await _get_user_roles([uuid.uuid4()])
+        assert roles == ["MANAGER"]
+
+@pytest.mark.asyncio
+async def test_list_drafts_forbidden(mock_auth_header: str) -> None:
+    """Test GET /workbench/drafts - Forbidden."""
+    with patch(
+        "coreason_adlc_api.routers.workbench.map_groups_to_projects", new=AsyncMock(return_value=["other-project"])
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get(
+                "/api/v1/workbench/drafts?auc_id=project-alpha", headers={"Authorization": mock_auth_header}
+            )
+            assert resp.status_code == 403
