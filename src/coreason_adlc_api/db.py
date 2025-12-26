@@ -82,6 +82,7 @@ async def _run_ddl() -> None:
         os.path.join(base_path, "auth", "ddl.sql"),
         os.path.join(base_path, "vault", "ddl.sql"),
         os.path.join(base_path, "workbench", "ddl.sql"),
+        os.path.join(base_path, "telemetry", "ddl.sql"),
     ]
 
     async with _pool.acquire() as conn:

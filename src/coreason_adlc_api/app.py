@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -17,6 +18,7 @@ from loguru import logger
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.routers import auth, interceptor, system, vault, workbench
+from coreason_adlc_api.telemetry.worker import telemetry_worker
 
 
 @asynccontextmanager
@@ -30,12 +32,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize Database
     await init_db()
 
+    # Start Telemetry Worker
+    telemetry_task = asyncio.create_task(telemetry_worker())
+
     # Placeholder for Vault Initialization
     # Placeholder for Enterprise License Check
 
     yield
 
     logger.info("Shutting down Coreason ADLC API...")
+
+    # Stop Telemetry Worker
+    telemetry_task.cancel()
+    try:
+        await telemetry_task
+    except asyncio.CancelledError:
+        logger.info("Telemetry Worker stopped.")
+
     await close_db()
 
 
