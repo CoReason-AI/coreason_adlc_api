@@ -12,10 +12,9 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from fastapi.testclient import TestClient
-
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
+from fastapi.testclient import TestClient
 
 # Router is already registered in app.py now.
 client = TestClient(app)

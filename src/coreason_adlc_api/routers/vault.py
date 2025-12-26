@@ -10,11 +10,10 @@
 
 import datetime
 
-from fastapi import APIRouter, Depends, status
-
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from coreason_adlc_api.vault.schemas import CreateSecretRequest, SecretResponse
 from coreason_adlc_api.vault.service import store_secret
+from fastapi import APIRouter, Depends, status
 
 router = APIRouter(prefix="/vault", tags=["Vault"])
 

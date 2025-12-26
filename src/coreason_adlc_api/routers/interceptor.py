@@ -12,14 +12,13 @@ import time
 from typing import Any, Dict, List, Optional, cast
 
 import litellm
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from coreason_adlc_api.middleware.budget import check_budget_guardrail
 from coreason_adlc_api.middleware.pii import scrub_pii_payload
 from coreason_adlc_api.middleware.proxy import execute_inference_proxy
 from coreason_adlc_api.middleware.telemetry import async_log_telemetry
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/chat", tags=["interceptor"])
 

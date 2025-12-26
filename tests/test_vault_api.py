@@ -14,11 +14,10 @@ from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import JWT_ALGORITHM, JWT_SECRET
 from coreason_adlc_api.vault.service import retrieve_decrypted_secret, store_secret
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

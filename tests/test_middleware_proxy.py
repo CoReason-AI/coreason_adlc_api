@@ -12,9 +12,8 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from fastapi import HTTPException
-
 from coreason_adlc_api.middleware.proxy import execute_inference_proxy, proxy_breaker
+from fastapi import HTTPException
 
 
 @pytest.fixture

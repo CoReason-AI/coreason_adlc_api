@@ -11,9 +11,8 @@
 import base64
 import os
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 from coreason_adlc_api.config import settings
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class VaultCrypto:
@@ -68,6 +67,6 @@ class VaultCrypto:
             nonce = decoded[:12]
             ciphertext = decoded[12:]
             plaintext = self._aesgcm.decrypt(nonce, ciphertext, None)
-            return plaintext.decode("utf-8")  # type: ignore[no-any-return]
+            return plaintext.decode("utf-8")
         except Exception:
             raise ValueError("Decryption failed. Invalid key or corrupted data.") from None

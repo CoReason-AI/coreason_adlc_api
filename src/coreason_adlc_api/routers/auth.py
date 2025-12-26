@@ -12,10 +12,9 @@ import datetime
 import uuid
 
 import jwt
-from fastapi import APIRouter, Body
-
 from coreason_adlc_api.auth.identity import JWT_ALGORITHM, JWT_SECRET, upsert_user
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
+from fastapi import APIRouter, Body
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
