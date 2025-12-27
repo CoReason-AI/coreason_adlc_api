@@ -12,8 +12,9 @@ import datetime
 import uuid
 
 import jwt
-from coreason_adlc_api.auth.identity import JWT_ALGORITHM, JWT_SECRET, upsert_user
+from coreason_adlc_api.auth.identity import upsert_user
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
+from coreason_adlc_api.config import settings
 from fastapi import APIRouter, Body
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -56,7 +57,7 @@ async def poll_for_token(device_code: str = Body(..., embed=True)) -> TokenRespo
         "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1),
     }
 
-    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
     # Side-effect: Ensure user exists in DB so FK constraints don't fail later
     # We call upsert_user logic internally here to simulate a successful login hook

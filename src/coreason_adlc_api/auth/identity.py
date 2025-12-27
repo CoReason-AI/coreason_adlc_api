@@ -13,6 +13,7 @@ from uuid import UUID
 
 import jwt
 from coreason_adlc_api.auth.schemas import UserIdentity
+from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import get_pool
 from fastapi import Header, HTTPException, status
 from loguru import logger
@@ -22,14 +23,7 @@ __all__ = [
     "parse_and_validate_token",
     "map_groups_to_projects",
     "upsert_user",
-    "JWT_SECRET",
-    "JWT_ALGORITHM",
 ]
-
-# TODO: Move to settings or fetch from IdP (JWKS)
-# For now, using a placeholder secret for dev
-JWT_SECRET = "dev-secret-change-me"
-JWT_ALGORITHM = "HS256"
 
 
 async def parse_and_validate_token(authorization: str = Header(..., alias="Authorization")) -> UserIdentity:
@@ -46,7 +40,9 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
 
     try:
         # In production, this should verify against IdP's JWKS
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], options={"verify_aud": False})
+        payload = jwt.decode(
+            token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM], options={"verify_aud": False}
+        )
 
         raw_oid = payload.get("oid")
         if not raw_oid:

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 import jwt
 import pytest
 from coreason_adlc_api.app import app
-from coreason_adlc_api.auth.identity import JWT_ALGORITHM, JWT_SECRET
+from coreason_adlc_api.config import settings
 from coreason_adlc_api.routers import workbench
 from coreason_adlc_api.workbench.locking import AccessMode
 from coreason_adlc_api.workbench.schemas import DraftResponse
@@ -32,7 +32,7 @@ def generate_token(user_uuid: str, roles: list[str]) -> str:
         "groups": [str(uuid.uuid4()) for _ in roles],  # Dummy groups
         "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1),
     }
-    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     return f"Bearer {token}"
 
 

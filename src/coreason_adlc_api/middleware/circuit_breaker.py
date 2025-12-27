@@ -75,10 +75,11 @@ class AsyncCircuitBreaker:
     def _handle_success(self) -> None:
         if self.state == "half-open":
             self.state = "closed"
-            self.failure_history.clear()
             logger.info("Circuit Breaker recovered to Closed state.")
-        # NOTE: We do NOT clear failure history on success while Closed.
-        # This enforces "X failures in Y seconds" regardless of intervening successes.
+
+        # Reset failure count on success to prevent accumulating intermittent errors.
+        if self.failure_history:
+            self.failure_history.clear()
 
     async def __aenter__(self) -> "AsyncCircuitBreaker":
         if self.state == "open":
