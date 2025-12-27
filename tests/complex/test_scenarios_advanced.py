@@ -10,7 +10,7 @@
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Generator
+from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -18,8 +18,7 @@ import jwt
 import pytest
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock, verify_lock_for_update
-from coreason_adlc_api.workbench.schemas import DraftResponse
-from coreason_adlc_api.workbench.service import update_draft
+from coreason_adlc_api.workbench.schemas import DraftCreate, DraftResponse
 from fastapi import HTTPException
 
 
@@ -61,6 +60,7 @@ def mock_pool() -> Generator[MagicMock, None, None]:
 
 # --- Complex Scenarios ---
 
+
 @pytest.mark.asyncio
 async def test_conflicting_safe_view_vs_edit(mock_pool: MagicMock) -> None:
     """
@@ -77,17 +77,18 @@ async def test_conflicting_safe_view_vs_edit(mock_pool: MagicMock) -> None:
     mock_conn = mock_pool.acquire.return_value.__aenter__.return_value
 
     # State
-    lock_state = {
-        "locked_by": user_a,
-        "expiry": datetime.now(timezone.utc) + timedelta(seconds=30)
-    }
+    lock_state = {"locked_by": user_a, "expiry": datetime.now(timezone.utc) + timedelta(seconds=30)}
 
     async def fetchrow_side_effect(query: str, *args: object) -> dict[str, object] | None:
         if "SELECT locked_by_user" in query:
             return {"locked_by_user": lock_state["locked_by"], "lock_expiry": lock_state["expiry"]}
         if "SELECT * FROM workbench.agent_drafts" in query:
-             # Minimal mock for get_draft_by_id or similar checks
-             return {"draft_id": draft_id, "locked_by_user": lock_state["locked_by"], "lock_expiry": lock_state["expiry"]}
+            # Minimal mock for get_draft_by_id or similar checks
+            return {
+                "draft_id": draft_id,
+                "locked_by_user": lock_state["locked_by"],
+                "lock_expiry": lock_state["expiry"],
+            }
         return None
 
     mock_conn.fetchrow.side_effect = fetchrow_side_effect
@@ -139,7 +140,7 @@ async def test_project_switching_race_condition(mock_pool: MagicMock) -> None:
 
         # 3. Call Router Handler (simulating Entry)
         # Import inside test to patch locally
-        from coreason_adlc_api.routers.workbench import create_new_draft, DraftCreate
+        from coreason_adlc_api.routers.workbench import create_new_draft
 
         draft_req = DraftCreate(auc_id=auc_id, title="Race Test", oas_content={})
 
@@ -150,18 +151,23 @@ async def test_project_switching_race_condition(mock_pool: MagicMock) -> None:
         # We'll use a side_effect on `create_draft` to verify that even if we change the mapping
         # externally, it doesn't matter because verify happened before.
 
-        async def slow_create(*args, **kwargs):
+        async def slow_create(*args: Any, **kwargs: Any) -> DraftResponse:
             # Simulate external change: The DB now says NO access
             # But since verify was already called, this shouldn't stop execution
             mock_map.return_value = []
             await asyncio.sleep(0.1)
             # Return fake response
             return DraftResponse(
-                draft_id=uuid4(), user_uuid=user_oid, auc_id=auc_id,
-                title="Race Test", oas_content={}, created_at=datetime.now(), updated_at=datetime.now()
+                draft_id=uuid4(),
+                user_uuid=user_oid,
+                auc_id=auc_id,
+                title="Race Test",
+                oas_content={},
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
             )
 
-        with patch("coreason_adlc_api.routers.workbench.create_draft", side_effect=slow_create) as mock_create:
+        with patch("coreason_adlc_api.routers.workbench.create_draft", side_effect=slow_create):
             # ACT
             response = await create_new_draft(draft_req, identity)
 
@@ -182,13 +188,7 @@ async def test_expired_jwt_during_long_operation() -> None:
     """
     # 1. Generate a token that expires in 1 second
     exp = datetime.now(timezone.utc) + timedelta(seconds=1)
-    token_payload = {
-        "oid": str(uuid4()),
-        "email": "test@example.com",
-        "groups": [],
-        "name": "Test User",
-        "exp": exp
-    }
+    token_payload = {"oid": str(uuid4()), "email": "test@example.com", "groups": [], "name": "Test User", "exp": exp}
     token = jwt.encode(token_payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     header = f"Bearer {token}"
 
@@ -224,7 +224,7 @@ async def test_safe_view_upgrade_attempt(mock_pool: MagicMock) -> None:
     """
     draft_id = uuid4()
     manager_uuid = uuid4()
-    owner_uuid = uuid4() # Someone else
+    owner_uuid = uuid4()  # Someone else
 
     # Mock DB state: Locked by owner
     future = datetime.now(timezone.utc) + timedelta(seconds=30)
