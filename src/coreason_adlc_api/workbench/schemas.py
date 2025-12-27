@@ -21,6 +21,13 @@ class AccessMode(str, Enum):
     SAFE_VIEW = "SAFE_VIEW"
 
 
+class ApprovalStatus(str, Enum):
+    DRAFT = "DRAFT"
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class DraftCreate(BaseModel):
     auc_id: str
     title: str
@@ -41,6 +48,7 @@ class DraftResponse(BaseModel):
     title: str
     oas_content: dict[str, Any]
     runtime_env: str | None = None
+    status: ApprovalStatus = ApprovalStatus.DRAFT
     locked_by_user: UUID | None = None
     lock_expiry: datetime | None = None
     mode: AccessMode = AccessMode.EDIT
