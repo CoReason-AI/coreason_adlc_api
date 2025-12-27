@@ -15,10 +15,9 @@ from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from coreason_adlc_api.app import app
 from coreason_adlc_api.config import settings
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
@@ -53,9 +52,7 @@ async def test_chat_huge_payload(mock_auth_header: str) -> None:
     }
 
     # Mock dependencies to isolate middleware processing
-    mock_response = {
-        "choices": [{"message": {"content": "Processed"}}]
-    }
+    mock_response = {"choices": [{"message": {"content": "Processed"}}]}
 
     # Removing the mock for scrub_pii_payload to test real behavior
     # Assuming Presidio can handle 2MB within the timeout, or we accept the slowness.
@@ -72,7 +69,7 @@ async def test_chat_huge_payload(mock_auth_header: str) -> None:
                 "/api/v1/chat/completions",
                 json=payload,
                 headers={"Authorization": mock_auth_header},
-                timeout=30.0 # Increase timeout for real PII scrubbing
+                timeout=30.0,  # Increase timeout for real PII scrubbing
             )
 
             assert resp.status_code == 200
@@ -101,7 +98,7 @@ async def test_chat_deeply_nested_json(mock_auth_header: str) -> None:
         "model": "gpt-4",
         "messages": [{"role": "user", "content": "hello"}],
         "auc_id": "project-robustness",
-        "user_context": nested_context
+        "user_context": nested_context,
     }
 
     with (
@@ -112,9 +109,7 @@ async def test_chat_deeply_nested_json(mock_auth_header: str) -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             try:
                 resp = await ac.post(
-                    "/api/v1/chat/completions",
-                    json=payload,
-                    headers={"Authorization": mock_auth_header}
+                    "/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header}
                 )
                 assert resp.status_code != 500
             except RecursionError:
@@ -135,9 +130,7 @@ async def test_chat_zalgo_text(mock_auth_header: str) -> None:
         "auc_id": "project-robustness",
     }
 
-    mock_response = {
-        "choices": [{"message": {"content": "Zalgo Processed"}}]
-    }
+    mock_response = {"choices": [{"message": {"content": "Zalgo Processed"}}]}
 
     # Do not mock scrub_pii_payload, we want to test real processing
     with (
@@ -146,11 +139,7 @@ async def test_chat_zalgo_text(mock_auth_header: str) -> None:
         patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()) as mock_log,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.post(
-                "/api/v1/chat/completions",
-                json=payload,
-                headers={"Authorization": mock_auth_header}
-            )
+            resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
 
             assert resp.status_code == 200
 
