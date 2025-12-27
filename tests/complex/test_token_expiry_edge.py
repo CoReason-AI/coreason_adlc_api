@@ -21,14 +21,13 @@ from coreason_adlc_api.config import settings
 from httpx import ASGITransport, AsyncClient
 
 
-@pytest.fixture
-def short_lived_token() -> str:
+def generate_token(expiry_seconds: float) -> str:
     """
-    Generates a token that expires in 1 second.
+    Generates a token that expires in `expiry_seconds` from now.
     """
     user_uuid = str(uuid.uuid4())
-    # Expiry 1 second in the future
-    exp_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)
+    # Expiry relative to now
+    exp_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=expiry_seconds)
 
     payload = {
         "sub": user_uuid,
@@ -43,16 +42,16 @@ def short_lived_token() -> str:
 
 
 @pytest.mark.asyncio
-async def test_long_running_request_completes_after_expiry(short_lived_token: str) -> None:
+async def test_long_running_request_completes_after_expiry() -> None:
     """
     Test that a request initiated with a valid token completes successfully
     even if the token expires while the request is being processed (mid-flight).
     """
 
-    # Mock the proxy to simulate a long-running operation (1.5 seconds)
-    # The token expires in 1.0 second.
+    # Mock the proxy to simulate a long-running operation (2.5 seconds)
+    # The token expires in 2.0 seconds.
     async def slow_proxy_response(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(2.5)
         return {
             "choices": [{"message": {"content": "I survived time travel!"}}],
             "usage": {"total_tokens": 10},
@@ -66,6 +65,10 @@ async def test_long_running_request_completes_after_expiry(short_lived_token: st
         patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            # Generate token INSIDE the context to minimize delay before request
+            # Give a robust 2-second window for the request to reach the server handler
+            token = generate_token(expiry_seconds=2.0)
+
             payload = {
                 "model": "gpt-4",
                 "messages": [{"role": "user", "content": "Hello"}],
@@ -73,7 +76,7 @@ async def test_long_running_request_completes_after_expiry(short_lived_token: st
             }
 
             # Start request immediately (token is valid)
-            resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": short_lived_token})
+            resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": token})
 
             assert resp.status_code == 200
             data = resp.json()
@@ -81,11 +84,13 @@ async def test_long_running_request_completes_after_expiry(short_lived_token: st
 
 
 @pytest.mark.asyncio
-async def test_request_fails_after_expiry(short_lived_token: str) -> None:
+async def test_request_fails_after_expiry() -> None:
     """
     Control test: Verify that the same token is rejected if the request
     starts AFTER the token has expired.
     """
+    token = generate_token(expiry_seconds=1.0)
+
     # Wait for 1.2 seconds (token expires in 1.0s)
     await asyncio.sleep(1.2)
 
@@ -96,7 +101,7 @@ async def test_request_fails_after_expiry(short_lived_token: str) -> None:
             "auc_id": "project-alpha",
         }
 
-        resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": short_lived_token})
+        resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": token})
 
         # Should be 401 (or 403 depending on implementation, usually 401 for expiry)
         assert resp.status_code in [401, 403]
