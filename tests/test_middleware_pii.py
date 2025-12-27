@@ -74,3 +74,11 @@ def test_scrub_pii_exception(mock_analyzer: Any) -> None:
 
     with pytest.raises(ValueError, match="PII Scrubbing failed"):
         scrub_pii_payload("some text")
+
+
+def test_scrub_pii_generic_value_error(mock_analyzer: Any) -> None:
+    """Test handling of ValueError that is NOT length related."""
+    mock_analyzer.analyze.side_effect = ValueError("Some internal value error")
+
+    with pytest.raises(ValueError, match="PII Scrubbing failed"):
+        scrub_pii_payload("some text")
