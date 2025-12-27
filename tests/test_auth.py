@@ -16,13 +16,12 @@ import jwt
 import pytest
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import (
-    JWT_ALGORITHM,
-    JWT_SECRET,
     UserIdentity,
     map_groups_to_projects,
     parse_and_validate_token,
     upsert_user,
 )
+from coreason_adlc_api.config import settings
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
@@ -40,7 +39,11 @@ def mock_token() -> tuple[str, str, str]:
         "groups": [group_uuid],
         "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), user_uuid, group_uuid
+    return (
+        jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM),
+        user_uuid,
+        group_uuid,
+    )
 
 
 @pytest.mark.asyncio
@@ -69,7 +72,7 @@ async def test_parse_token_expired() -> None:
         "oid": str(uuid.uuid4()),
         "exp": datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1),
     }
-    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     header = f"Bearer {token}"
 
     with pytest.raises(HTTPException) as exc:
@@ -79,7 +82,7 @@ async def test_parse_token_expired() -> None:
 
 @pytest.mark.asyncio
 async def test_parse_token_invalid_signature() -> None:
-    token = jwt.encode({"oid": str(uuid.uuid4())}, "wrong-secret", algorithm=JWT_ALGORITHM)
+    token = jwt.encode({"oid": str(uuid.uuid4())}, "wrong-secret", algorithm=settings.JWT_ALGORITHM)
     header = f"Bearer {token}"
 
     with pytest.raises(HTTPException) as exc:
@@ -90,7 +93,7 @@ async def test_parse_token_invalid_signature() -> None:
 @pytest.mark.asyncio
 async def test_parse_token_malformed_claims() -> None:
     # Missing required 'oid' or bad format
-    token = jwt.encode({"sub": "no-oid"}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    token = jwt.encode({"sub": "no-oid"}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     header = f"Bearer {token}"
 
     with pytest.raises(HTTPException) as exc:
