@@ -112,7 +112,7 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
     # 4. LiteLLM
     mock_litellm_resp = {
         "choices": [{"message": {"content": llm_output_text}}],
-        "usage": {"total_tokens": 100}
+        "usage": {"total_tokens": 100},
     }
 
     # --- Execution Context ---
@@ -122,22 +122,25 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         patch("coreason_adlc_api.routers.workbench.get_pool", return_value=mock_pool),
         patch("coreason_adlc_api.middleware.proxy.get_pool", return_value=mock_pool),
         patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool),
-
         # Patch Redis getters
         patch("coreason_adlc_api.middleware.budget.get_redis_client", return_value=mock_redis),
         patch("coreason_adlc_api.middleware.telemetry.get_redis_client", return_value=mock_redis),
-
         # Patch Services/Logic
-        patch("coreason_adlc_api.routers.workbench.map_groups_to_projects", new_callable=AsyncMock) as mock_map_groups,
+        patch(
+            "coreason_adlc_api.routers.workbench.map_groups_to_projects", new_callable=AsyncMock
+        ) as mock_map_groups,
         patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create_draft,
         # Patch VaultCrypto where it is used in proxy.py
         patch("coreason_adlc_api.middleware.proxy.VaultCrypto", return_value=mock_crypto),
-
         # Patch LiteLLM
         patch("coreason_adlc_api.middleware.proxy.litellm.acompletion", new_callable=AsyncMock) as mock_acompletion,
-        patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider", return_value=("openai", "gpt-4", "k", "b")),
-        patch("coreason_adlc_api.routers.interceptor.litellm.completion_cost", return_value=0.03), # Real cost calc
-
+        patch(
+            "coreason_adlc_api.middleware.proxy.litellm.get_llm_provider",
+            return_value=("openai", "gpt-4", "k", "b"),
+        ),
+        patch(
+            "coreason_adlc_api.routers.interceptor.litellm.completion_cost", return_value=0.03
+        ),  # Real cost calc
         # Patch PII Scrubbing
         patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
     ):
@@ -152,37 +155,37 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         draft_resp = await create_new_draft(draft_req, identity)
 
         assert draft_resp.title == "Agent Smith"
-        mock_map_groups.assert_called() # Verified RBAC
-        mock_create_draft.assert_called() # Verified DB Write attempt
+        mock_map_groups.assert_called()  # Verified RBAC
+        mock_create_draft.assert_called()  # Verified DB Write attempt
 
         # --- STEP 2: Interceptor - Chat Completion ---
         chat_req = ChatCompletionRequest(
             model=model_name,
             messages=[{"role": "user", "content": user_input_text}],
             auc_id=auc_id,
-            estimated_cost=0.01
+            estimated_cost=0.01,
         )
 
-        response = await chat_completions(chat_req, identity)
+        _ = await chat_completions(chat_req, identity)
 
         # --- Verification Phase ---
 
         # 1. Budget Checked?
-        mock_redis.incrbyfloat.assert_called() # Should call for budget check
+        mock_redis.incrbyfloat.assert_called()  # Should call for budget check
         # Specifically check the key format if we want to be pedantic, but called is good enough.
         args, _ = mock_redis.incrbyfloat.call_args
-        assert f"budget:{asyncio.get_event_loop().time()}" not in args[0] # Just ensuring it ran
+        assert f"budget:{asyncio.get_event_loop().time()}" not in args[0]  # Just ensuring it ran
 
         # 2. Vault Accessed?
-        mock_pool.fetchrow.assert_called() # To get encrypted key
+        mock_pool.fetchrow.assert_called()  # To get encrypted key
         mock_crypto.decrypt_secret.assert_called_with(b"encrypted_fake_key")
 
         # 3. Proxy Called Correctly?
         mock_acompletion.assert_called_once()
         call_kwargs = mock_acompletion.call_args.kwargs
-        assert call_kwargs["api_key"] == "sk-fake-openai-key" # Decrypted key injected
-        assert call_kwargs["temperature"] == 0.0 # Determinism enforcement
-        assert call_kwargs["messages"][0]["content"] == user_input_text # Raw input sent to LLM
+        assert call_kwargs["api_key"] == "sk-fake-openai-key"  # Decrypted key injected
+        assert call_kwargs["temperature"] == 0.0  # Determinism enforcement
+        assert call_kwargs["messages"][0]["content"] == user_input_text  # Raw input sent to LLM
 
         # 4. PII Scrubbing?
         # Expect 2 calls: one for input, one for output
@@ -200,11 +203,12 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
 
         # Since json_payload is a string, we check substrings or parse it
         import json
+
         payload_dict = json.loads(json_payload)
 
         assert payload_dict["auc_id"] == auc_id
         assert payload_dict["user_uuid"] == str(user_oid)
-        assert payload_dict["cost_usd"] == 0.03 # Real cost from completion_cost mock
+        assert payload_dict["cost_usd"] == 0.03  # Real cost from completion_cost mock
 
         # Verify SCRUBBED content was logged
         # Keys in payload are request_payload/response_payload, not input_text/output_text
