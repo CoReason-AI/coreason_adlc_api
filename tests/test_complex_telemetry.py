@@ -10,33 +10,33 @@
 
 import asyncio
 import json
+from typing import Generator
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 import redis
-from loguru import logger
-
 from coreason_adlc_api.middleware.telemetry import async_log_telemetry
 from coreason_adlc_api.telemetry.worker import telemetry_worker
+from loguru import logger
 
 
 class LogCapture:
-    def __init__(self):
-        self.logs = []
+    def __init__(self) -> None:
+        self.logs: list[str] = []
 
-    def write(self, message):
+    def write(self, message: str) -> None:
         self.logs.append(str(message))
 
-    def __contains__(self, text):
+    def __contains__(self, text: str) -> bool:
         return any(text in log for log in self.logs)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "\n".join(self.logs)
 
 
 @pytest.fixture
-def capture_logs():
+def capture_logs() -> Generator[LogCapture, None, None]:
     capture = LogCapture()
     handler_id = logger.add(capture.write, format="{message}")
     yield capture
@@ -44,7 +44,7 @@ def capture_logs():
 
 
 @pytest.mark.asyncio
-async def test_telemetry_producer_redis_failure(capture_logs) -> None:
+async def test_telemetry_producer_redis_failure(capture_logs: LogCapture) -> None:
     """
     Verify that async_log_telemetry handles Redis connection errors gracefully
     (logs error, does not raise exception to caller).
@@ -66,7 +66,7 @@ async def test_telemetry_producer_redis_failure(capture_logs) -> None:
 
 
 @pytest.mark.asyncio
-async def test_telemetry_worker_malformed_and_empty_data(capture_logs) -> None:
+async def test_telemetry_worker_malformed_and_empty_data(capture_logs: LogCapture) -> None:
     """
     Verify that telemetry_worker drops malformed JSON data, handles empty reads,
     and continues processing valid items without crashing.
@@ -92,18 +92,20 @@ async def test_telemetry_worker_malformed_and_empty_data(capture_logs) -> None:
     # 5. CancelledError -> Stop worker
 
     mock_client.blpop.side_effect = [
-        None,                             # Case 1: Timeout
-        ("telemetry_queue", ""),          # Case 2: Empty data
-        ("telemetry_queue", "{bad_json"), # Case 3: Malformed
-        ("telemetry_queue", json.dumps(valid_payload)), # Case 4: Valid
-        asyncio.CancelledError(),         # Case 5: Stop
+        None,  # Case 1: Timeout
+        ("telemetry_queue", ""),  # Case 2: Empty data
+        ("telemetry_queue", "{bad_json"),  # Case 3: Malformed
+        ("telemetry_queue", json.dumps(valid_payload)),  # Case 4: Valid
+        asyncio.CancelledError(),  # Case 5: Stop
     ]
 
     # Mock DB Pool
     mock_pool = MagicMock()
     mock_pool.execute = MagicMock()
-    async def async_execute(*args, **kwargs):
+
+    async def async_execute(*args: object, **kwargs: object) -> None:
         pass
+
     mock_pool.execute.side_effect = async_execute
 
     with (
@@ -114,8 +116,10 @@ async def test_telemetry_worker_malformed_and_empty_data(capture_logs) -> None:
 
     # Assertions
     # 1. Should log error for malformed data
-    assert "Failed to process telemetry log: Expecting property name enclosed in double quotes" in capture_logs or \
-           "Failed to process telemetry log" in capture_logs
+    assert (
+        "Failed to process telemetry log: Expecting property name enclosed in double quotes" in capture_logs
+        or "Failed to process telemetry log" in capture_logs
+    )
 
     # 2. Should have called DB execute exactly once (for the valid payload)
     assert mock_pool.execute.call_count == 1
@@ -125,7 +129,7 @@ async def test_telemetry_worker_malformed_and_empty_data(capture_logs) -> None:
 
 
 @pytest.mark.asyncio
-async def test_telemetry_worker_redis_down(capture_logs) -> None:
+async def test_telemetry_worker_redis_down(capture_logs: LogCapture) -> None:
     """
     Verify that telemetry_worker handles Redis connection errors with backoff
     and does not crash.
@@ -144,10 +148,12 @@ async def test_telemetry_worker_redis_down(capture_logs) -> None:
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_client),
         patch("coreason_adlc_api.telemetry.worker.get_pool", return_value=mock_pool),
-        patch("asyncio.sleep", new_callable=MagicMock) as mock_sleep
+        patch("asyncio.sleep", new_callable=MagicMock) as mock_sleep,
     ):
-        async def async_sleep_side_effect(*args, **kwargs):
+
+        async def async_sleep_side_effect(*args: object, **kwargs: object) -> None:
             pass
+
         mock_sleep.side_effect = async_sleep_side_effect
 
         await telemetry_worker()
