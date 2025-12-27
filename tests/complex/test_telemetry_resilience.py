@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from coreason_adlc_api.middleware.telemetry import async_log_telemetry
 from coreason_adlc_api.telemetry.worker import telemetry_worker
-from loguru import logger
 
 
 @pytest.mark.asyncio
@@ -137,10 +136,10 @@ async def test_worker_mixed_failure_stream() -> None:
     # Same logic as above: asyncio.to_thread expects sync return values.
     mock_redis.blpop.side_effect = [
         ("queue", "INVALID JSON"),  # 1. Poison
-        None,                       # 2. Timeout
-        ("queue", json.dumps(valid_payload)), # 3. DB Down
-        ("queue", json.dumps(valid_payload)), # 4. Success
-        asyncio.CancelledError("Stop")
+        None,  # 2. Timeout
+        ("queue", json.dumps(valid_payload)),  # 3. DB Down
+        ("queue", json.dumps(valid_payload)),  # 4. Success
+        asyncio.CancelledError("Stop"),
     ]
 
     mock_pool = MagicMock()
@@ -150,10 +149,7 @@ async def test_worker_mixed_failure_stream() -> None:
     # Call 2 (from Timeout): execute NOT called
     # Call 3 (from DB Down): execute called -> Raises
     # Call 4 (from Success): execute called -> Returns None
-    mock_pool.execute.side_effect = [
-        Exception("DB Down"),
-        None
-    ]
+    mock_pool.execute.side_effect = [Exception("DB Down"), None]
 
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_redis),
