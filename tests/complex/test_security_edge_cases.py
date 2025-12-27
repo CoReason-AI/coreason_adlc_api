@@ -62,9 +62,7 @@ def mock_pool() -> Generator[MagicMock, None, None]:
 
 
 @pytest.mark.asyncio
-async def test_rbac_session_revocation(
-    mock_identity: UserIdentity, mock_pool: MagicMock
-) -> None:
+async def test_rbac_session_revocation(mock_identity: UserIdentity, mock_pool: MagicMock) -> None:
     """
     Test that a user's access is revoked immediately if their group mapping changes,
     even if they have a valid token (simulated by same identity object).
@@ -78,9 +76,7 @@ async def test_rbac_session_revocation(
             "coreason_adlc_api.routers.workbench.map_groups_to_projects",
             new_callable=AsyncMock,
         ) as mock_map,
-        patch(
-            "coreason_adlc_api.routers.workbench.get_drafts", new_callable=AsyncMock
-        ) as mock_get_drafts,
+        patch("coreason_adlc_api.routers.workbench.get_drafts", new_callable=AsyncMock) as mock_get_drafts,
     ):
         # 1. Initial State: Access Allowed
         mock_map.return_value = [auc_id]
@@ -101,18 +97,14 @@ async def test_rbac_session_revocation(
 
 
 @pytest.mark.asyncio
-async def test_cross_project_creation_denied(
-    mock_identity: UserIdentity, mock_pool: MagicMock
-) -> None:
+async def test_cross_project_creation_denied(mock_identity: UserIdentity, mock_pool: MagicMock) -> None:
     """
     Test that a user cannot create a draft in a project they don't have access to.
     """
     allowed_project = "proj-A"
     target_project = "proj-B"  # No access
 
-    draft_input = DraftCreate(
-        auc_id=target_project, title="Malicious Draft", oas_content={}
-    )
+    draft_input = DraftCreate(auc_id=target_project, title="Malicious Draft", oas_content={})
 
     with patch(
         "coreason_adlc_api.routers.workbench.map_groups_to_projects",
@@ -122,9 +114,7 @@ async def test_cross_project_creation_denied(
         mock_map.return_value = [allowed_project]
 
         # Patch create_draft to ensure it's NOT called
-        with patch(
-            "coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock
-        ) as mock_create:
+        with patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create:
             with pytest.raises(HTTPException) as exc:
                 await create_new_draft(draft_input, identity=mock_identity)
 
@@ -133,9 +123,7 @@ async def test_cross_project_creation_denied(
 
 
 @pytest.mark.asyncio
-async def test_cross_project_lock_acquisition_denied(
-    mock_identity: UserIdentity, mock_pool: MagicMock
-) -> None:
+async def test_cross_project_lock_acquisition_denied(mock_identity: UserIdentity, mock_pool: MagicMock) -> None:
     """
     Test scenario where a user tries to access (and lock) a draft from a project they don't have access to.
     This verifies that we don't accidentally lock the resource before checking permission.
@@ -180,9 +168,7 @@ async def test_cross_project_lock_acquisition_denied(
             # router -> get_draft_by_id -> acquire_draft_lock -> DB Update
 
             # Patching internal service functions to spy on them
-            with patch(
-                "coreason_adlc_api.routers.workbench.get_draft_by_id"
-            ) as mock_get_draft_service:
+            with patch("coreason_adlc_api.routers.workbench.get_draft_by_id") as mock_get_draft_service:
                 # Setup service return value (simulating it found and locked the draft)
                 mock_response = MagicMock()
                 mock_response.auc_id = target_project
@@ -212,9 +198,7 @@ async def test_cross_project_lock_acquisition_denied(
 
 
 @pytest.mark.asyncio
-async def test_malformed_json_injection(
-    mock_identity: UserIdentity, mock_pool: MagicMock
-) -> None:
+async def test_malformed_json_injection(mock_identity: UserIdentity, mock_pool: MagicMock) -> None:
     """
     Test handling of potentially malicious JSON payloads (depth, size).
     """
@@ -232,9 +216,7 @@ async def test_malformed_json_injection(
     ) as mock_map:
         mock_map.return_value = ["proj-A"]
 
-        with patch(
-            "coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock
-        ) as mock_create:
+        with patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create:
             mock_create.return_value = MagicMock(title="Deep Draft")
 
             response = await create_new_draft(draft_input, identity=mock_identity)
