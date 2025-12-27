@@ -86,7 +86,7 @@ async def test_proxy_circuit_breaker(mock_db_pool: Any, mock_vault_crypto: Any, 
 
     # Reset breaker (manual reset for custom class)
     proxy_breaker.state = "closed"
-    proxy_breaker.fail_counter = 0
+    proxy_breaker.failure_history.clear()
 
     # Manually trip
     proxy_breaker.state = "open"

@@ -13,8 +13,13 @@ from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker
 
 
 @pytest.mark.asyncio
-async def test_cb_success_resets_counter() -> None:
-    cb = AsyncCircuitBreaker(fail_max=2, reset_timeout=0.1)
+async def test_cb_success_does_not_reset_history_in_sliding_window() -> None:
+    """
+    Verifies that a success does NOT reset the failure history in the sliding window implementation.
+    The previous behavior (consecutive failures) reset on success, but sliding window retains failures within window.
+    """
+    # Use a long window so failures stick
+    cb = AsyncCircuitBreaker(fail_max=2, reset_timeout=0.1, time_window=10.0)
 
     # 1. First failure
     try:
@@ -22,20 +27,21 @@ async def test_cb_success_resets_counter() -> None:
             raise ValueError("fail 1")
     except ValueError:
         pass
-    assert cb.fail_counter == 1
+    assert len(cb.failure_history) == 1
 
     # 2. Success
     async with cb:
         pass
 
-    # Counter should be reset to 0
-    assert cb.fail_counter == 0
+    # Counter should NOT be reset to 0, because the failure is still in the 10s window
+    assert len(cb.failure_history) == 1
 
-    # 3. Next failure should count as 1, not 2 (tripping)
+    # 3. Next failure should count as 2, tripping the breaker
     try:
         async with cb:
-            raise ValueError("fail 1 again")
+            raise ValueError("fail 2")
     except ValueError:
         pass
-    assert cb.fail_counter == 1
-    assert cb.state == "closed"
+
+    assert len(cb.failure_history) == 2
+    assert cb.state == "open"
