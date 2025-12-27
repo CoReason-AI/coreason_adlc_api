@@ -182,12 +182,12 @@ async def test_expired_jwt_during_long_operation() -> None:
     """
     Scenario:
     JWT is valid at T=0.
-    Operation takes 2 seconds.
-    JWT expires at T=1.
+    Operation takes 6 seconds.
+    JWT expires at T=5.
     Result should be success (Validation at entry only).
     """
-    # 1. Generate a token that expires in 1 second
-    exp = datetime.now(timezone.utc) + timedelta(seconds=1)
+    # 1. Generate a token that expires in 5 seconds
+    exp = datetime.now(timezone.utc) + timedelta(seconds=5)
     token_payload = {"oid": str(uuid4()), "email": "test@example.com", "groups": [], "name": "Test User", "exp": exp}
     token = jwt.encode(token_payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     header = f"Bearer {token}"
@@ -199,7 +199,7 @@ async def test_expired_jwt_during_long_operation() -> None:
     assert identity.email == "test@example.com"
 
     # 3. Simulate Long Op (sleep past expiration)
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(6)
 
     # Now token is technically expired.
     # But we already have the `identity` object.
