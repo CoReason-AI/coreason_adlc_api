@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import asyncio
-from typing import Any, Dict, Generator
+from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -237,10 +237,7 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
         patch("coreason_adlc_api.middleware.budget.settings.DAILY_BUDGET_LIMIT", 10.0),
     ):
         req = ChatCompletionRequest(
-            model="gpt-4",
-            messages=[{"role": "user", "content": "hi"}],
-            auc_id=auc_id,
-            estimated_cost=1.0
+            model="gpt-4", messages=[{"role": "user", "content": "hi"}], auc_id=auc_id, estimated_cost=1.0
         )
 
         with pytest.raises(HTTPException) as exc:
