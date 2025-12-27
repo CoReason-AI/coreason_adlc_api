@@ -10,7 +10,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import AsyncGenerator
+from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -41,7 +41,7 @@ def mock_auth_headers() -> tuple[dict[str, str], dict[str, str]]:
     )
 
 
-async def mock_parse_token(request: Request):
+async def mock_parse_token(request: Request) -> MagicMock:
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
 
     mock_id = MagicMock()
@@ -58,7 +58,7 @@ async def mock_parse_token(request: Request):
 
 
 @pytest.fixture(autouse=True)
-def override_dependency():
+def override_dependency() -> Generator[None, None, None]:
     app.dependency_overrides[parse_and_validate_token] = mock_parse_token
     yield
     app.dependency_overrides = {}
