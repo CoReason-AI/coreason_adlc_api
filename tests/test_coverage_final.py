@@ -20,7 +20,8 @@ from fastapi import HTTPException
 @pytest.mark.asyncio
 async def test_circuit_breaker_call_method() -> None:
     """Test the 'call' method of AsyncCircuitBreaker which was missing coverage."""
-    cb = AsyncCircuitBreaker(fail_max=2, reset_timeout=0.1)
+    # Use small window/timeout for testing
+    cb = AsyncCircuitBreaker(fail_max=2, reset_timeout=0.1, time_window=1.0)
 
     # 1. Success case
     async def success_func() -> str:
@@ -29,7 +30,7 @@ async def test_circuit_breaker_call_method() -> None:
     res = await cb.call(success_func)
     assert res == "ok"
     assert cb.state == "closed"
-    assert cb.fail_counter == 0
+    assert len(cb.failure_history) == 0
 
     # 2. Failure case
     async def fail_func() -> None:
@@ -37,11 +38,11 @@ async def test_circuit_breaker_call_method() -> None:
 
     with pytest.raises(ValueError):
         await cb.call(fail_func)
-    assert cb.fail_counter == 1
+    assert len(cb.failure_history) == 1
 
     with pytest.raises(ValueError):
         await cb.call(fail_func)
-    assert cb.fail_counter == 2
+    assert len(cb.failure_history) == 2
     assert cb.state == "open"
 
     # 3. Call while open -> CircuitBreakerOpenError
@@ -57,7 +58,8 @@ async def test_circuit_breaker_call_method() -> None:
     res = await cb.call(success_func)
     assert res == "ok"
     assert cb.state == "closed"
-    assert cb.fail_counter == 0
+    # Success clears history in Half-Open transition
+    assert len(cb.failure_history) == 0
 
 
 @pytest.mark.asyncio
@@ -94,7 +96,7 @@ async def test_proxy_generic_exception() -> None:
 
         # Reset breaker state
         proxy_breaker.state = "closed"
-        proxy_breaker.fail_counter = 0
+        proxy_breaker.failure_history.clear()
 
         with pytest.raises(HTTPException) as exc:
             await execute_inference_proxy([], "gpt-4", "proj-1")
