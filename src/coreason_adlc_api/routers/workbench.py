@@ -126,9 +126,7 @@ async def _get_draft_and_verify_access(draft_id: UUID, identity: UserIdentity) -
 
 
 @router.post("/drafts/{draft_id}/submit", response_model=DraftResponse)
-async def submit_draft(
-    draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
-) -> DraftResponse:
+async def submit_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Submits a draft for approval.
     Transitions: DRAFT/REJECTED -> PENDING
@@ -138,9 +136,7 @@ async def submit_draft(
 
 
 @router.post("/drafts/{draft_id}/approve", response_model=DraftResponse)
-async def approve_draft(
-    draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
-) -> DraftResponse:
+async def approve_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Approves a pending draft.
     Transitions: PENDING -> APPROVED
@@ -155,9 +151,7 @@ async def approve_draft(
 
 
 @router.post("/drafts/{draft_id}/reject", response_model=DraftResponse)
-async def reject_draft(
-    draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
-) -> DraftResponse:
+async def reject_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Rejects a pending draft.
     Transitions: PENDING -> REJECTED

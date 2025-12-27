@@ -135,9 +135,7 @@ async def update_draft(draft_id: UUID, update: DraftUpdate, user_uuid: UUID) -> 
     return DraftResponse.model_validate(dict(row))
 
 
-async def transition_draft_status(
-    draft_id: UUID, user_uuid: UUID, new_status: ApprovalStatus
-) -> DraftResponse:
+async def transition_draft_status(draft_id: UUID, user_uuid: UUID, new_status: ApprovalStatus) -> DraftResponse:
     """
     Handles state transitions:
     - DRAFT -> PENDING (Submit)
@@ -170,9 +168,7 @@ async def transition_draft_status(
         allowed = False
 
     if not allowed:
-        raise HTTPException(
-            status_code=409, detail=f"Invalid transition from {current_status} to {new_status}"
-        )
+        raise HTTPException(status_code=409, detail=f"Invalid transition from {current_status} to {new_status}")
 
     # Perform Update
     update_query = """

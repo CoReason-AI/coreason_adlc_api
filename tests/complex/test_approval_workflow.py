@@ -86,7 +86,7 @@ async def test_workflow_happy_path(mock_auth_headers: tuple[dict[str, str], dict
         oas_content={},
         status=ApprovalStatus.DRAFT,
         created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc)
+        updated_at=datetime.now(timezone.utc),
     )
 
     with (
@@ -97,7 +97,6 @@ async def test_workflow_happy_path(mock_auth_headers: tuple[dict[str, str], dict
     ):
         # Setup Client
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-
             # --- 1. Create (Already exists in mock, so we skip to Submit) ---
             # Pre-condition: Status is DRAFT
             mock_get.return_value = draft_base
@@ -108,10 +107,7 @@ async def test_workflow_happy_path(mock_auth_headers: tuple[dict[str, str], dict
             mock_trans.return_value = pending_draft
 
             # Act
-            resp = await ac.post(
-                f"/api/v1/workbench/drafts/{draft_id}/submit",
-                headers=editor_headers
-            )
+            resp = await ac.post(f"/api/v1/workbench/drafts/{draft_id}/submit", headers=editor_headers)
 
             assert resp.status_code == 200, f"Submit failed: {resp.text}"
             assert resp.json()["status"] == "PENDING"
@@ -127,10 +123,7 @@ async def test_workflow_happy_path(mock_auth_headers: tuple[dict[str, str], dict
             # Mock Manager Role
             mock_roles.return_value = ["MANAGER"]
 
-            resp = await ac.post(
-                f"/api/v1/workbench/drafts/{draft_id}/approve",
-                headers=manager_headers
-            )
+            resp = await ac.post(f"/api/v1/workbench/drafts/{draft_id}/approve", headers=manager_headers)
 
             assert resp.status_code == 200, f"Approve failed: {resp.text}"
             assert resp.json()["status"] == "APPROVED"
@@ -158,9 +151,9 @@ async def test_workflow_rejection_loop(mock_auth_headers: tuple[dict[str, str], 
         auc_id="project-alpha",
         title="Workflow Agent",
         oas_content={},
-        status=ApprovalStatus.PENDING, # Starting at PENDING for this test
+        status=ApprovalStatus.PENDING,  # Starting at PENDING for this test
         created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc)
+        updated_at=datetime.now(timezone.utc),
     )
 
     with (
@@ -171,17 +164,13 @@ async def test_workflow_rejection_loop(mock_auth_headers: tuple[dict[str, str], 
         patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock()) as mock_roles,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-
             # --- 1. Manager Rejects ---
             mock_get.return_value = draft_base
             mock_roles.return_value = ["MANAGER"]
             rejected_draft = draft_base.model_copy(update={"status": ApprovalStatus.REJECTED})
             mock_trans.return_value = rejected_draft
 
-            resp = await ac.post(
-                f"/api/v1/workbench/drafts/{draft_id}/reject",
-                headers=manager_headers
-            )
+            resp = await ac.post(f"/api/v1/workbench/drafts/{draft_id}/reject", headers=manager_headers)
             assert resp.status_code == 200, f"Reject failed: {resp.text}"
             assert resp.json()["status"] == "REJECTED"
 
@@ -195,14 +184,12 @@ async def test_workflow_rejection_loop(mock_auth_headers: tuple[dict[str, str], 
 
             # But wait, `update_existing_draft` router endpoint calls `update_draft`
             # The rejection put it in REJECTED state.
-            mock_get.return_value = rejected_draft # Current state in DB is REJECTED
+            mock_get.return_value = rejected_draft  # Current state in DB is REJECTED
 
             mock_update.return_value = rejected_draft.model_copy(update={"title": "Fixed Title"})
 
             resp = await ac.put(
-                f"/api/v1/workbench/drafts/{draft_id}",
-                json={"title": "Fixed Title"},
-                headers=editor_headers
+                f"/api/v1/workbench/drafts/{draft_id}", json={"title": "Fixed Title"}, headers=editor_headers
             )
             assert resp.status_code == 200, f"Update failed: {resp.text}"
 
@@ -210,10 +197,7 @@ async def test_workflow_rejection_loop(mock_auth_headers: tuple[dict[str, str], 
             pending_draft = rejected_draft.model_copy(update={"status": ApprovalStatus.PENDING})
             mock_trans.return_value = pending_draft
 
-            resp = await ac.post(
-                f"/api/v1/workbench/drafts/{draft_id}/submit",
-                headers=editor_headers
-            )
+            resp = await ac.post(f"/api/v1/workbench/drafts/{draft_id}/submit", headers=editor_headers)
             assert resp.status_code == 200, f"Resubmit failed: {resp.text}"
             assert resp.json()["status"] == "PENDING"
 
