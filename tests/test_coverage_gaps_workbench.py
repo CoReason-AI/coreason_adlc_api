@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import uuid
-from typing import AsyncGenerator, Generator
+from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -53,10 +53,10 @@ def mock_auth_headers_gaps() -> tuple[dict[str, str], dict[str, str]]:
 
 # --- Router Coverage Tests ---
 
+
 @pytest.mark.asyncio
 async def test_submit_draft_not_found(
-    override_dependency_gaps: None,
-    mock_auth_headers_gaps: tuple[dict[str, str], dict[str, str]]
+    override_dependency_gaps: None, mock_auth_headers_gaps: tuple[dict[str, str], dict[str, str]]
 ) -> None:
     editor_headers, _ = mock_auth_headers_gaps
     draft_id = uuid.uuid4()
@@ -70,8 +70,7 @@ async def test_submit_draft_not_found(
 
 @pytest.mark.asyncio
 async def test_approve_draft_not_manager(
-    override_dependency_gaps: None,
-    mock_auth_headers_gaps: tuple[dict[str, str], dict[str, str]]
+    override_dependency_gaps: None, mock_auth_headers_gaps: tuple[dict[str, str], dict[str, str]]
 ) -> None:
     # Use editor token (who is not manager)
     editor_headers, _ = mock_auth_headers_gaps
@@ -87,8 +86,7 @@ async def test_approve_draft_not_manager(
 
 @pytest.mark.asyncio
 async def test_reject_draft_not_manager(
-    override_dependency_gaps: None,
-    mock_auth_headers_gaps: tuple[dict[str, str], dict[str, str]]
+    override_dependency_gaps: None, mock_auth_headers_gaps: tuple[dict[str, str], dict[str, str]]
 ) -> None:
     # Use editor token (who is not manager)
     editor_headers, _ = mock_auth_headers_gaps
@@ -103,6 +101,7 @@ async def test_reject_draft_not_manager(
 
 
 # --- Service Coverage Tests ---
+
 
 @pytest.fixture
 def mock_pool() -> Generator[AsyncMock, None, None]:
