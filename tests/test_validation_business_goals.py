@@ -11,7 +11,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import AsyncGenerator
+from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,8 +22,6 @@ from coreason_adlc_api.workbench.locking import acquire_draft_lock
 from coreason_adlc_api.workbench.schemas import AccessMode
 from fastapi import HTTPException
 
-
-from typing import Generator
 
 @pytest.fixture
 def mock_redis() -> Generator[MagicMock, None, None]:
