@@ -9,9 +9,9 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import asyncio
-import time
+
 import pytest
-from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
+from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_flapping_service_retrigger() -> None:
     """
     Scenario: A service is "flapping" (Fail -> Trip -> Recover -> Fail -> Trip...).
 
-    We verify that after a successful recovery (which clears failure history),
+    We verify that after a successful recovery (which resets the breaker),
     subsequent failures *do* eventually trip the breaker again.
 
     Configuration:
@@ -30,7 +30,7 @@ async def test_flapping_service_retrigger() -> None:
     cb = AsyncCircuitBreaker(fail_max=fail_max, reset_timeout=0.1, time_window=5.0)
 
     # 1. Trip the breaker (Fail 3 times)
-    for i in range(fail_max):
+    for _ in range(fail_max):
         try:
             async with cb:
                 raise ValueError("fail")
@@ -63,7 +63,7 @@ async def test_flapping_service_retrigger() -> None:
     assert len(cb.failure_history) == 1
 
     # 5. Continue failing until trip
-    for i in range(fail_max - 1):
+    for _ in range(fail_max - 1):
         try:
             async with cb:
                 raise ValueError("fail again")
@@ -89,11 +89,15 @@ async def test_failed_recovery_immediate() -> None:
 
     # 1. Trip it
     try:
-        async with cb: raise ValueError("1")
-    except ValueError: pass
+        async with cb:
+            raise ValueError("1")
+    except ValueError:
+        pass
     try:
-        async with cb: raise ValueError("2")
-    except ValueError: pass
+        async with cb:
+            raise ValueError("2")
+    except ValueError:
+        pass
 
     assert cb.state == "open"
 
@@ -135,8 +139,10 @@ async def test_failed_recovery_expired_history() -> None:
     # 1. Trip it
     for _ in range(fail_max):
         try:
-            async with cb: raise ValueError("fail")
-        except ValueError: pass
+            async with cb:
+                raise ValueError("fail")
+        except ValueError:
+            pass
 
     assert cb.state == "open"
 
@@ -153,29 +159,21 @@ async def test_failed_recovery_expired_history() -> None:
     # History was pruned (old failures > 0.2s ago).
     # New failure added. Count = 1.
     # 1 < 3 -> State is NOT Open.
-    # Note: State logic in CB keeps it "half-open" internally until success or trip,
-    # OR calls might just proceed.
-    # Let's check state.
-
-    # Our analysis: _handle_failure sets state="open" ONLY IF limit reached.
-    # It does not set "closed".
-    # However, if it's "half-open" and we failed, it remains "half-open"
-    # but `call` method allows execution if not "open".
-    # Wait, `call` checks `if self.state == "open"`.
-    # If state is "half-open", it proceeds.
-
-    # So effectively it is "Closed" (accepting traffic).
     assert cb.state != "open"
     assert len(cb.failure_history) == 1
 
     # 4. Fail again (Count = 2)
     try:
-        async with cb: raise ValueError("fail")
-    except ValueError: pass
+        async with cb:
+            raise ValueError("fail")
+    except ValueError:
+        pass
     assert cb.state != "open"
 
     # 5. Fail again (Count = 3 -> Trip)
     try:
-        async with cb: raise ValueError("fail")
-    except ValueError: pass
+        async with cb:
+            raise ValueError("fail")
+    except ValueError:
+        pass
     assert cb.state == "open"
