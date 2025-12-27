@@ -10,8 +10,7 @@
 
 import datetime
 import uuid
-import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
@@ -19,6 +18,7 @@ from coreason_adlc_api.app import app
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.workbench.schemas import DraftResponse
 from httpx import ASGITransport, AsyncClient
+
 
 @pytest.fixture
 def mock_auth_header() -> str:
@@ -34,6 +34,7 @@ def mock_auth_header() -> str:
     token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     return f"Bearer {token}"
 
+
 @pytest.mark.asyncio
 async def test_create_draft_unauthorized_project(mock_auth_header: str) -> None:
     """
@@ -45,15 +46,12 @@ async def test_create_draft_unauthorized_project(mock_auth_header: str) -> None:
         new=AsyncMock(return_value=["project-beta"]),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            payload = {
-                "auc_id": "project-alpha",
-                "title": "Unauthorized Agent",
-                "oas_content": {"info": "test"}
-            }
+            payload = {"auc_id": "project-alpha", "title": "Unauthorized Agent", "oas_content": {"info": "test"}}
             resp = await ac.post("/api/v1/workbench/drafts", json=payload, headers={"Authorization": mock_auth_header})
 
             assert resp.status_code == 403
             assert "User is not authorized" in resp.json()["detail"]
+
 
 @pytest.mark.asyncio
 async def test_get_draft_unauthorized_project(mock_auth_header: str) -> None:
@@ -76,7 +74,7 @@ async def test_get_draft_unauthorized_project(mock_auth_header: str) -> None:
         patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
         patch(
             "coreason_adlc_api.routers.workbench.map_groups_to_projects",
-            new=AsyncMock(return_value=["project-beta"]), # User only has access to project-beta
+            new=AsyncMock(return_value=["project-beta"]),  # User only has access to project-beta
         ),
         patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock(return_value=[])),
     ):
@@ -84,6 +82,7 @@ async def test_get_draft_unauthorized_project(mock_auth_header: str) -> None:
             resp = await ac.get(f"/api/v1/workbench/drafts/{draft_id}", headers={"Authorization": mock_auth_header})
             assert resp.status_code == 403
             assert "User is not authorized" in resp.json()["detail"]
+
 
 @pytest.mark.asyncio
 async def test_update_draft_unauthorized_project(mock_auth_header: str) -> None:
@@ -118,6 +117,7 @@ async def test_update_draft_unauthorized_project(mock_auth_header: str) -> None:
             assert resp.status_code == 403
             assert "User is not authorized" in resp.json()["detail"]
 
+
 @pytest.mark.asyncio
 async def test_create_draft_invalid_input(mock_auth_header: str) -> None:
     """
@@ -133,7 +133,7 @@ async def test_create_draft_invalid_input(mock_auth_header: str) -> None:
             resp = await ac.post(
                 "/api/v1/workbench/drafts",
                 json={"auc_id": "project-alpha"},
-                headers={"Authorization": mock_auth_header}
+                headers={"Authorization": mock_auth_header},
             )
             assert resp.status_code == 422
 
@@ -148,11 +148,12 @@ async def test_create_draft_invalid_input(mock_auth_header: str) -> None:
                 json={
                     "auc_id": "project-alpha",
                     "title": "Valid",
-                    "oas_content": "NOT A DICT" # Invalid type
+                    "oas_content": "NOT A DICT",  # Invalid type
                 },
-                headers={"Authorization": mock_auth_header}
+                headers={"Authorization": mock_auth_header},
             )
             assert resp.status_code == 422
+
 
 @pytest.mark.asyncio
 async def test_vault_unauthorized_project(mock_auth_header: str) -> None:
@@ -165,13 +166,10 @@ async def test_vault_unauthorized_project(mock_auth_header: str) -> None:
         new=AsyncMock(return_value=["project-beta"]),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            payload = {
-                "auc_id": "project-alpha",
-                "service_name": "openai",
-                "raw_api_key": "sk-..."
-            }
+            payload = {"auc_id": "project-alpha", "service_name": "openai", "raw_api_key": "sk-..."}
             resp = await ac.post("/api/v1/vault/secrets", json=payload, headers={"Authorization": mock_auth_header})
             assert resp.status_code == 403
+
 
 @pytest.mark.asyncio
 async def test_system_compliance_missing() -> None:

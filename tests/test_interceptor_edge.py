@@ -10,14 +10,15 @@
 
 import datetime
 import uuid
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from fastapi import HTTPException
+from unittest.mock import AsyncMock, patch
 
 import jwt
+import pytest
 from coreason_adlc_api.app import app
 from coreason_adlc_api.config import settings
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+
 
 @pytest.fixture
 def mock_auth_header() -> str:
@@ -33,6 +34,7 @@ def mock_auth_header() -> str:
     token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     return f"Bearer {token}"
 
+
 @pytest.mark.asyncio
 async def test_chat_budget_exceeded(mock_auth_header: str) -> None:
     """
@@ -41,19 +43,20 @@ async def test_chat_budget_exceeded(mock_auth_header: str) -> None:
     """
     with patch(
         "coreason_adlc_api.routers.interceptor.check_budget_guardrail",
-        side_effect=HTTPException(status_code=402, detail="Budget exceeded")
+        side_effect=HTTPException(status_code=402, detail="Budget exceeded"),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {
                 "model": "gpt-4",
                 "messages": [{"role": "user", "content": "Hello"}],
                 "auc_id": "project-alpha",
-                "estimated_cost": 0.05
+                "estimated_cost": 0.05,
             }
             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
 
             assert resp.status_code == 402
             assert "Budget exceeded" in resp.json()["detail"]
+
 
 @pytest.mark.asyncio
 async def test_chat_upstream_failure(mock_auth_header: str) -> None:
@@ -64,19 +67,18 @@ async def test_chat_upstream_failure(mock_auth_header: str) -> None:
         patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
         patch(
             "coreason_adlc_api.routers.interceptor.execute_inference_proxy",
-            side_effect=Exception("Upstream Service Down")
-        )
+            side_effect=Exception("Upstream Service Down"),
+        ),
     ):
         # raise_app_exceptions=False allows us to capture the 500 response instead of raising the error
-        async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as ac:
-            payload = {
-                "model": "gpt-4",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "auc_id": "project-alpha"
-            }
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+        ) as ac:
+            payload = {"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}], "auc_id": "project-alpha"}
             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
 
             assert resp.status_code == 500
+
 
 @pytest.mark.asyncio
 async def test_chat_pii_edge_cases(mock_auth_header: str) -> None:
@@ -89,14 +91,14 @@ async def test_chat_pii_edge_cases(mock_auth_header: str) -> None:
     with (
         patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
         patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", return_value=mock_proxy_resp),
-        patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()) as mock_log
+        patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()) as mock_log,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             # 1. PII Only input
             payload = {
                 "model": "gpt-4",
                 "messages": [{"role": "user", "content": "Call me at 555-555-5555"}],
-                "auc_id": "project-alpha"
+                "auc_id": "project-alpha",
             }
             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
             assert resp.status_code == 200
@@ -108,6 +110,7 @@ async def test_chat_pii_edge_cases(mock_auth_header: str) -> None:
             payload["messages"] = [{"role": "user", "content": ""}]
             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
             assert resp.status_code == 200
+
 
 @pytest.mark.asyncio
 async def test_chat_invalid_input(mock_auth_header: str) -> None:
@@ -121,12 +124,11 @@ async def test_chat_invalid_input(mock_auth_header: str) -> None:
             "model": "gpt-4",
             "messages": [{"role": "user", "content": "Hello"}],
             "auc_id": "project-alpha",
-            "estimated_cost": -10.0
+            "estimated_cost": -10.0,
         }
 
         with patch(
-            "coreason_adlc_api.routers.interceptor.check_budget_guardrail",
-            side_effect=ValueError("Negative cost")
+            "coreason_adlc_api.routers.interceptor.check_budget_guardrail", side_effect=ValueError("Negative cost")
         ):
-             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
-             assert resp.status_code == 500
+            resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
+            assert resp.status_code == 500
