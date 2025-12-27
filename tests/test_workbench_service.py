@@ -154,8 +154,8 @@ async def test_update_draft_logic(mock_pool: AsyncMock) -> None:
             "updated_at": "2024-01-01T00:00:00Z",
             "locked_by_user": user_id,
             "lock_expiry": datetime.now(timezone.utc) + timedelta(minutes=1),
-            "status": ApprovalStatus.DRAFT
-        }
+            "status": ApprovalStatus.DRAFT,
+        },
     ]
 
     with patch("coreason_adlc_api.workbench.service.verify_lock_for_update"):
@@ -186,14 +186,14 @@ async def test_update_draft_no_fields(mock_pool: AsyncMock) -> None:
             "updated_at": "2024-01-01T00:00:00Z",
             "locked_by_user": user_id,
             "lock_expiry": datetime.now(timezone.utc) + timedelta(minutes=1),
-            "status": ApprovalStatus.DRAFT
-        }
+            "status": ApprovalStatus.DRAFT,
+        },
     ]
 
     # Mock acquire_draft_lock because get_draft_by_id calls it
     with (
         patch("coreason_adlc_api.workbench.service.acquire_draft_lock"),
-        patch("coreason_adlc_api.workbench.service.verify_lock_for_update")
+        patch("coreason_adlc_api.workbench.service.verify_lock_for_update"),
     ):
         res = await update_draft(draft_id, DraftUpdate(), user_id)
         assert res.title == "Old Title"
@@ -205,10 +205,7 @@ async def test_update_draft_not_found(mock_pool: AsyncMock) -> None:
     # Case: Update with fields, but row not found
     # Mock status check success, but update returns None (race condition or not found)
 
-    mock_pool.fetchrow.side_effect = [
-         {"status": ApprovalStatus.DRAFT},
-         None
-    ]
+    mock_pool.fetchrow.side_effect = [{"status": ApprovalStatus.DRAFT}, None]
 
     with pytest.raises(HTTPException) as exc, patch("coreason_adlc_api.workbench.service.verify_lock_for_update"):
         await update_draft(uuid.uuid4(), DraftUpdate(title="X"), uuid.uuid4())
@@ -218,10 +215,7 @@ async def test_update_draft_not_found(mock_pool: AsyncMock) -> None:
 @pytest.mark.asyncio
 async def test_update_draft_no_fields_not_found(mock_pool: AsyncMock) -> None:
     # Case: No fields, but draft lookup fails
-    mock_pool.fetchrow.side_effect = [
-         {"status": ApprovalStatus.DRAFT},
-         None
-    ]
+    mock_pool.fetchrow.side_effect = [{"status": ApprovalStatus.DRAFT}, None]
 
     with (
         pytest.raises(HTTPException) as exc,
