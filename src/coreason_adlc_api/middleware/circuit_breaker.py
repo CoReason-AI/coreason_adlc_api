@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import time
+from collections import deque
 from typing import Any, Callable, Type
 
 from loguru import logger
@@ -25,10 +26,16 @@ class AsyncCircuitBreaker:
     A simple asyncio-compatible Circuit Breaker.
     """
 
-    def __init__(self, fail_max: int = 5, reset_timeout: float = 60) -> None:
+    def __init__(self, fail_max: int = 5, reset_timeout: float = 60, time_window: float = 10.0) -> None:
+        """
+        :param fail_max: Number of failures allowed within time_window before opening.
+        :param reset_timeout: Seconds to wait before attempting Half-Open.
+        :param time_window: Sliding window in seconds for counting failures.
+        """
         self.fail_max = fail_max
         self.reset_timeout = reset_timeout
-        self.fail_counter = 0
+        self.time_window = time_window
+        self.failure_history: deque[float] = deque()
         self.state = "closed"
         self.last_failure_time = 0.0
 
@@ -44,22 +51,34 @@ class AsyncCircuitBreaker:
 
         try:
             result = await func(*args, **kwargs)
-            if self.state == "half-open":
-                self.state = "closed"
-            # Reset counter on success if closed (prevents accumulation of intermittent errors)
-            if self.state == "closed":
-                self.fail_counter = 0
+            self._handle_success()
             return result
         except Exception as e:
             self._handle_failure()
             raise e
 
+    def _prune_history(self, now: float) -> None:
+        """Remove failures older than time_window."""
+        while self.failure_history and self.failure_history[0] <= now - self.time_window:
+            self.failure_history.popleft()
+
     def _handle_failure(self) -> None:
-        self.fail_counter += 1
-        self.last_failure_time = time.time()
-        if self.fail_counter >= self.fail_max:
+        now = time.time()
+        self.last_failure_time = now
+        self.failure_history.append(now)
+        self._prune_history(now)
+
+        if len(self.failure_history) >= self.fail_max:
             self.state = "open"
-            logger.warning(f"Circuit Breaker tripped. Failures: {self.fail_counter}")
+            logger.warning(f"Circuit Breaker tripped. {len(self.failure_history)} failures in {self.time_window}s.")
+
+    def _handle_success(self) -> None:
+        if self.state == "half-open":
+            self.state = "closed"
+            self.failure_history.clear()
+            logger.info("Circuit Breaker recovered to Closed state.")
+        # NOTE: We do NOT clear failure history on success while Closed.
+        # This enforces "X failures in Y seconds" regardless of intervening successes.
 
     async def __aenter__(self) -> "AsyncCircuitBreaker":
         if self.state == "open":
@@ -74,8 +93,5 @@ class AsyncCircuitBreaker:
             # We treat any exception as a failure
             self._handle_failure()
         else:
-            if self.state == "half-open":
-                self.state = "closed"
-            if self.state == "closed":
-                self.fail_counter = 0
+            self._handle_success()
         return False  # Propagate exception
