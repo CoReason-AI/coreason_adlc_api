@@ -126,9 +126,7 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         patch("coreason_adlc_api.middleware.budget.get_redis_client", return_value=mock_redis),
         patch("coreason_adlc_api.middleware.telemetry.get_redis_client", return_value=mock_redis),
         # Patch Services/Logic
-        patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects", new_callable=AsyncMock
-        ) as mock_map_groups,
+        patch("coreason_adlc_api.routers.workbench.map_groups_to_projects", new_callable=AsyncMock) as mock_map_groups,
         patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create_draft,
         # Patch VaultCrypto where it is used in proxy.py
         patch("coreason_adlc_api.middleware.proxy.VaultCrypto", return_value=mock_crypto),
@@ -138,9 +136,7 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
             "coreason_adlc_api.middleware.proxy.litellm.get_llm_provider",
             return_value=("openai", "gpt-4", "k", "b"),
         ),
-        patch(
-            "coreason_adlc_api.routers.interceptor.litellm.completion_cost", return_value=0.03
-        ),  # Real cost calc
+        patch("coreason_adlc_api.routers.interceptor.litellm.completion_cost", return_value=0.03),  # Real cost calc
         # Patch PII Scrubbing
         patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
     ):
