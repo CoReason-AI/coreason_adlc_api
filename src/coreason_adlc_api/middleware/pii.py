@@ -91,14 +91,13 @@ def scrub_pii_payload(text_payload: str | None) -> str | None:
 
         return "".join(scrubbed_text)
 
+    except ValueError as e:
+        # Spacy raises ValueError for text > 1,000,000 chars
+        if "exceeds maximum" in str(e):
+            logger.warning(f"PII Scrubbing skipped due to excessive length: {len(text_payload)} chars.")
+            return "<REDACTED: PAYLOAD TOO LARGE FOR PII ANALYSIS>"
+        logger.error(f"PII Scrubbing failed: {e}")
+        raise ValueError("PII Scrubbing failed.") from e
     except Exception as e:
         logger.error(f"PII Scrubbing failed: {e}")
-        # Fail safe?
-        # If scrubbing fails, should we block or pass?
-        # BG-02: "Eliminate legal liability... Zero PII detected".
-        # If we return raw text, we risk leaking PII.
-        # But blocking disrupts service.
-        # Given "Strict Governance", blocking or returning a generic error is safer than leaking.
-        # However, for this implementation, I will catch and return a placeholder error string to the caller
-        # so they know something went wrong, rather than leaking the original.
         raise ValueError("PII Scrubbing failed.") from e
