@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     DAILY_BUDGET_LIMIT: float = 50.0  # Dollars
     ENTERPRISE_LICENSE_KEY: str | None = None
 
+    # Auth
+    JWT_SECRET: str = "dev-secret-change-me"
+    JWT_ALGORITHM: str = "HS256"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

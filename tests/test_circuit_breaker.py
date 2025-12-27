@@ -128,7 +128,7 @@ async def test_cb_sliding_window_expiry() -> None:
 @pytest.mark.asyncio
 async def test_cb_mixed_success_failure() -> None:
     """
-    Test that successes DO NOT clear history while Closed, preserving strict error rate.
+    Test that successes DO clear history while Closed, preventing intermittent errors from tripping.
     """
     cb = AsyncCircuitBreaker(fail_max=2, time_window=1.0)
 
@@ -143,8 +143,8 @@ async def test_cb_mixed_success_failure() -> None:
     async with cb:
         pass
 
-    # History should still contain 1 failure
-    assert len(cb.failure_history) == 1
+    # History should be cleared
+    assert len(cb.failure_history) == 0
 
     # 3. Failure (Within window)
     try:
@@ -153,8 +153,9 @@ async def test_cb_mixed_success_failure() -> None:
     except ValueError:
         pass
 
-    # Should trip because we have 2 failures in window, despite intermediate success
-    assert cb.state == "open"
+    # Should NOT trip because count was reset
+    assert cb.state == "closed"
+    assert len(cb.failure_history) == 1
 
 
 @pytest.mark.asyncio
