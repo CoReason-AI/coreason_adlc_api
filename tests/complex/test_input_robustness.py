@@ -21,6 +21,7 @@ from httpx import ASGITransport, AsyncClient
 
 try:
     from presidio_analyzer import AnalyzerEngine  # noqa: F401
+
     HAS_PRESIDIO = True
 except ImportError:
     HAS_PRESIDIO = False

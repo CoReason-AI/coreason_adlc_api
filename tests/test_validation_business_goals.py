@@ -24,6 +24,7 @@ from fastapi import HTTPException
 
 try:
     import presidio_analyzer  # noqa: F401
+
     HAS_PRESIDIO = True
 except ImportError:
     HAS_PRESIDIO = False

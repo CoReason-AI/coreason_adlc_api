@@ -20,6 +20,7 @@ from fastapi import HTTPException
 
 try:
     from presidio_analyzer import RecognizerResult  # noqa: F401
+
     HAS_PRESIDIO = True
 except ImportError:
     HAS_PRESIDIO = False
