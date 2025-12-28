@@ -8,14 +8,14 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import datetime
-import uuid
-
 import jwt
-from coreason_adlc_api.auth.identity import upsert_user
+import httpx
+import uuid
+from coreason_adlc_api.auth.identity import get_oidc_config, upsert_user, UserIdentity
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
 from coreason_adlc_api.config import settings
-from fastapi import APIRouter, Body
+from coreason_adlc_api.utils import get_http_client
+from fastapi import APIRouter, Body, HTTPException, status
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -23,52 +23,121 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post("/device-code", response_model=DeviceCodeResponse)
 async def initiate_device_code_flow() -> DeviceCodeResponse:
     """
-    Initiates SSO Device Flow.
-    MOCKED for this iteration.
+    Initiates SSO Device Flow by proxying to the upstream IdP.
     """
-    # In a real implementation, this would call the IdP (e.g., Azure AD, Auth0)
-    return DeviceCodeResponse(
-        device_code=str(uuid.uuid4()),
-        user_code=str(uuid.uuid4())[:8].upper(),
-        verification_uri="https://sso.example.com/device",
-        expires_in=600,
-        interval=5,
-    )
+    oidc_config = await get_oidc_config()
+    endpoint = oidc_config.get("device_authorization_endpoint")
+    if not endpoint:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="IdP does not support device flow"
+        )
+
+    payload = {
+        "client_id": settings.OIDC_CLIENT_ID,
+        "scope": "openid profile email offline_access",
+        "audience": settings.OIDC_AUDIENCE,
+    }
+
+    try:
+        async with get_http_client() as client:
+            resp = await client.post(endpoint, data=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+            return DeviceCodeResponse(
+                device_code=data["device_code"],
+                user_code=data["user_code"],
+                verification_uri=data["verification_uri"],
+                verification_uri_complete=data.get("verification_uri_complete"),
+                expires_in=data["expires_in"],
+                interval=data.get("interval", 5),
+            )
+    except httpx.HTTPError as e:
+        # Pass through error details if available, or generic error
+        detail = "Failed to initiate device flow"
+        if hasattr(e, 'response') and e.response:
+             detail = e.response.text
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail) from e
 
 
 @router.post("/token", response_model=TokenResponse)
 async def poll_for_token(device_code: str = Body(..., embed=True)) -> TokenResponse:
     """
-    Polls for Session Token (JWT).
-    MOCKED: Returns a valid JWT for testing purposes immediately.
+    Polls for Session Token (JWT) by proxying to the upstream IdP.
     """
-    # MOCK LOGIC: Generate a valid self-signed JWT using the local dev secret
-    # This allows other components to be tested against a "valid" token.
-
-    mock_user_uuid = "00000000-0000-0000-0000-000000000001"
-    mock_group_uuid = "11111111-1111-1111-1111-111111111111"
+    oidc_config = await get_oidc_config()
+    endpoint = oidc_config.get("token_endpoint")
+    if not endpoint:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="IdP token endpoint missing")
 
     payload = {
-        "sub": mock_user_uuid,
-        "oid": mock_user_uuid,
-        "name": "Test User",
-        "email": "test@coreason.ai",
-        "groups": [mock_group_uuid],
-        "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1),
+        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        "device_code": device_code,
+        "client_id": settings.OIDC_CLIENT_ID,
+        "client_secret": settings.OIDC_CLIENT_SECRET,  # Confidential client if secret set
     }
 
-    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    # If no client secret (public client), remove it.
+    # Typically backend is confidential.
+    if not settings.OIDC_CLIENT_SECRET:
+        payload.pop("client_secret")
 
-    # Side-effect: Ensure user exists in DB so FK constraints don't fail later
-    # We call upsert_user logic internally here to simulate a successful login hook
-    from coreason_adlc_api.auth.identity import UserIdentity
+    try:
+        async with get_http_client() as client:
+            resp = await client.post(endpoint, data=payload)
 
-    identity = UserIdentity(
-        oid=uuid.UUID(mock_user_uuid),
-        email="test@coreason.ai",
-        groups=[uuid.UUID(mock_group_uuid)],
-        full_name="Test User",
-    )
-    await upsert_user(identity)
+            # Handle specific polling errors
+            if resp.status_code == 400:
+                error_data = resp.json()
+                error_code = error_data.get("error")
+                if error_code in ["authorization_pending", "slow_down"]:
+                     raise HTTPException(
+                         status_code=status.HTTP_400_BAD_REQUEST,
+                         detail=error_code
+                     )
+                elif error_code == "expired_token":
+                     raise HTTPException(
+                         status_code=status.HTTP_400_BAD_REQUEST,
+                         detail="expired_token"
+                     )
 
-    return TokenResponse(access_token=token, expires_in=3600)
+            resp.raise_for_status()
+            data = resp.json()
+
+            access_token = data["access_token"]
+            expires_in = data.get("expires_in", 3600)
+
+            # Extract user info for upsert
+            # We decode unverified here just to extract claims for the DB sync.
+            # Real validation happens on subsequent API calls using the token.
+            try:
+                decoded = jwt.decode(access_token, options={"verify_signature": False})
+
+                raw_oid = decoded.get("oid") or decoded.get("sub")
+                if raw_oid:
+                    try:
+                        oid = uuid.UUID(raw_oid)
+                    except ValueError:
+                        oid = uuid.UUID(int=int(str(uuid.uuid5(uuid.NAMESPACE_DNS, raw_oid)).replace('-', ''), 16))
+
+                    email = decoded.get("email")
+                    name = decoded.get("name")
+
+                    identity = UserIdentity(
+                        oid=oid,
+                        email=email,
+                        full_name=name,
+                        groups=[] # Groups handled via graph or claims later
+                    )
+                    await upsert_user(identity)
+            except Exception:
+                # Logging handled in upsert_user or ignored if token non-decodable
+                pass
+
+            return TokenResponse(access_token=access_token, expires_in=expires_in)
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text) from e
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Upstream IdP unavailable") from e
