@@ -34,14 +34,9 @@ class CoreasonClient:
             return
 
         # Ensure base_url is strictly a string for httpx, even if None passed (handled by os.getenv default)
-        self.base_url = base_url or os.getenv("COREASON_API_URL", "http://localhost:8000")
-
-        # Mypy check: os.getenv could theoretically return None if default is None (not here, but logic wise)
-        # or base_url could be None if not provided.
-        # But `or` operator guarantees string if default is string.
-        # However, for absolute mypy strictness where it might infer Optional[str]:
-        if self.base_url is None:
-            self.base_url = "http://localhost:8000"
+        # We explicitly cast to str or handle None case in the 'or' to satisfy both runtime and mypy
+        url_from_env = os.getenv("COREASON_API_URL", "http://localhost:8000")
+        self.base_url = base_url or (url_from_env if url_from_env is not None else "http://localhost:8000")
 
         self.auth = ClientAuthManager()
 
