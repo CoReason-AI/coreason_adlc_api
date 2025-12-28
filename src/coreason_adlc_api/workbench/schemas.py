@@ -61,3 +61,17 @@ class DraftResponse(BaseModel):
 class ValidationResponse(BaseModel):
     is_valid: bool
     issues: list[str]  # e.g., ["PII Detected", "Budget Limit Reached"]
+
+
+class AgentArtifact(BaseModel):
+    id: UUID
+    auc_id: str
+    version: str
+    content: dict[str, Any]
+    compliance_hash: str
+    author_signature: str | None = None
+    created_at: datetime
+
+
+class PublishRequest(BaseModel):
+    signature: str

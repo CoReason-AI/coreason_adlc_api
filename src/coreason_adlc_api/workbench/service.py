@@ -9,13 +9,21 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import json
+from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
 
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.workbench.locking import acquire_draft_lock, verify_lock_for_update
-from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, DraftResponse, DraftUpdate
+from coreason_adlc_api.workbench.schemas import (
+    AgentArtifact,
+    ApprovalStatus,
+    DraftCreate,
+    DraftResponse,
+    DraftUpdate,
+)
 from fastapi import HTTPException
+from loguru import logger
 
 
 async def create_draft(draft: DraftCreate, user_uuid: UUID) -> DraftResponse:
@@ -191,3 +199,50 @@ async def transition_draft_status(draft_id: UUID, user_uuid: UUID, new_status: A
     res_dict = dict(updated_row)
     # Locking info might be null if we didn't join, but the table has the columns.
     return DraftResponse.model_validate(res_dict)
+
+
+async def assemble_artifact(draft_id: UUID, user_oid: UUID) -> AgentArtifact:
+    """
+    Assembles the canonical AgentArtifact from a draft.
+    Requires draft to be APPROVED.
+    """
+    # Use get_draft_by_id as standard accessor.
+    # Note: get_draft_by_id attempts to acquire a lock.
+    # If the draft is APPROVED, it's typically read-only or final, so lock might be irrelevant or we accept shared lock.
+    # Passing empty roles list as we are not checking editing rights here, just assembly rights (checked by caller via approval status?)
+    # Actually, we rely on the draft status check.
+
+    draft = await get_draft_by_id(draft_id, user_oid, [])
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    if draft.status != ApprovalStatus.APPROVED:
+        raise ValueError("Draft must be APPROVED to assemble")
+
+    artifact = AgentArtifact(
+        id=draft.draft_id,
+        auc_id=draft.auc_id,
+        version="1.0.0",  # Placeholder versioning strategy
+        content=draft.oas_content,
+        compliance_hash="sha256:mock_compliance_verification_hash",
+        # Use draft.updated_at (or created_at) to ensure deterministic output for signing
+        created_at=draft.updated_at,
+    )
+    return artifact
+
+
+async def publish_artifact(draft_id: UUID, signature: str, user_oid: UUID) -> str:
+    """
+    Publishes the signed artifact.
+    """
+    # 1. Assemble (checks approval)
+    artifact = await assemble_artifact(draft_id, user_oid)
+
+    # 2. Inject Signature
+    artifact.author_signature = signature
+
+    # 3. Mock Git Push
+    logger.info(f"Pushing artifact {artifact.id} to GitLab for user {user_oid}...")
+    mock_url = f"https://gitlab.example.com/agents/{draft_id}/v1"
+
+    return mock_url
