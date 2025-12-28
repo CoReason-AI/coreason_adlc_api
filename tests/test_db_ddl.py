@@ -10,8 +10,9 @@
 
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
-import coreason_adlc_api.db as db_module
 import pytest
+
+import coreason_adlc_api.db as db_module
 from coreason_adlc_api.db import _run_ddl
 
 

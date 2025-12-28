@@ -11,10 +11,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
+
 from coreason_adlc_api.app import app
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.main import main, start
-from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
