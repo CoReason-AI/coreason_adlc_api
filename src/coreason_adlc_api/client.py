@@ -8,11 +8,23 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+import json
 import os
+from typing import Any
 
 import httpx
 
 from coreason_adlc_api.client_auth import ClientAuthManager
+from coreason_adlc_api.exceptions import (
+    AuthenticationError,
+    BudgetExceededError,
+    ClientError,
+    ComplianceViolationError,
+    CoreasonError,
+    RateLimitError,
+    ServerError,
+    ServiceUnavailableError,
+)
 
 
 class CoreasonClient:
@@ -73,3 +85,72 @@ class CoreasonClient:
         Closes the underlying httpx client.
         """
         self.client.close()
+
+    def _handle_response(self, response: httpx.Response) -> httpx.Response:
+        """
+        Inspects the response status code and body to raise specific CoreasonErrors.
+        If the response is successful, it is returned.
+        """
+        if response.is_success:
+            return response
+
+        # Try to parse the error message from the body
+        message = ""
+        try:
+            data = response.json()
+            if isinstance(data, dict):
+                # Search for common error keys
+                message = data.get("detail") or data.get("message") or data.get("error") or ""
+        except json.JSONDecodeError:
+            pass
+
+        if not message:
+            # Fallback to the raw text body or standard HTTP reason phrase
+            message = response.text or response.reason_phrase
+
+        status = response.status_code
+
+        if status in (401, 403):
+            raise AuthenticationError(message, response)
+        elif status == 402:
+            raise BudgetExceededError(message, response)
+        elif status == 422:
+            raise ComplianceViolationError(message, response)
+        elif status == 429:
+            raise RateLimitError(message, response)
+        elif 400 <= status < 500:
+            raise ClientError(message, response)
+        elif status in (502, 503, 504):
+            raise ServiceUnavailableError(message, response)
+        elif 500 <= status < 600:
+            raise ServerError(message, response)
+
+        # Fallback for anything else that httpx considers an error (should be covered above if is_error is true)
+        raise CoreasonError(message, response)
+
+    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """
+        Wrapper for the underlying httpx client request.
+        Handles exceptions and maps them to domain-specific CoreasonErrors.
+
+        Returns:
+            httpx.Response: The raw response object (for header access, etc).
+        """
+        response = self.client.request(method, url, **kwargs)
+        return self._handle_response(response)
+
+    def get(self, url: str, **kwargs: Any) -> httpx.Response:
+        """Convenience wrapper for GET requests."""
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        """Convenience wrapper for POST requests."""
+        return self.request("POST", url, **kwargs)
+
+    def put(self, url: str, **kwargs: Any) -> httpx.Response:
+        """Convenience wrapper for PUT requests."""
+        return self.request("PUT", url, **kwargs)
+
+    def delete(self, url: str, **kwargs: Any) -> httpx.Response:
+        """Convenience wrapper for DELETE requests."""
+        return self.request("DELETE", url, **kwargs)
