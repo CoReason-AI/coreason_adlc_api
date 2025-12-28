@@ -14,7 +14,7 @@ from uuid import UUID
 
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.workbench.locking import acquire_draft_lock, verify_lock_for_update
-from coreason_adlc_api.workbench.schemas import DraftCreate, DraftResponse, DraftUpdate
+from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, DraftResponse, DraftUpdate
 from fastapi import HTTPException
 
 
@@ -65,9 +65,26 @@ async def get_draft_by_id(draft_id: UUID, user_uuid: UUID, roles: List[str]) -> 
     return resp
 
 
+async def _check_status_for_update(draft_id: UUID) -> None:
+    pool = get_pool()
+    query = "SELECT status FROM workbench.agent_drafts WHERE draft_id = $1"
+    status_row = await pool.fetchrow(query, draft_id)
+    if not status_row:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    status = status_row["status"]
+    if status not in (ApprovalStatus.DRAFT, ApprovalStatus.REJECTED):
+        raise HTTPException(
+            status_code=409, detail=f"Cannot edit draft in '{status}' status. Must be DRAFT or REJECTED."
+        )
+
+
 async def update_draft(draft_id: UUID, update: DraftUpdate, user_uuid: UUID) -> DraftResponse:
     # Verify Lock
     await verify_lock_for_update(draft_id, user_uuid)
+
+    # Verify Status (Cannot edit if PENDING or APPROVED)
+    await _check_status_for_update(draft_id)
 
     pool = get_pool()
 
@@ -116,3 +133,61 @@ async def update_draft(draft_id: UUID, update: DraftUpdate, user_uuid: UUID) -> 
         raise HTTPException(status_code=404, detail="Draft not found")
 
     return DraftResponse.model_validate(dict(row))
+
+
+async def transition_draft_status(draft_id: UUID, user_uuid: UUID, new_status: ApprovalStatus) -> DraftResponse:
+    """
+    Handles state transitions:
+    - DRAFT -> PENDING (Submit)
+    - PENDING -> APPROVED (Approve)
+    - PENDING -> REJECTED (Reject)
+    - REJECTED -> PENDING (Re-submit)
+    """
+    pool = get_pool()
+
+    # Get current status
+    query = "SELECT status FROM workbench.agent_drafts WHERE draft_id = $1"
+    row = await pool.fetchrow(query, draft_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    current_status = row["status"]
+
+    # Validate Transitions
+    allowed = False
+    if current_status == ApprovalStatus.DRAFT and new_status == ApprovalStatus.PENDING:
+        allowed = True
+    elif current_status == ApprovalStatus.REJECTED and new_status == ApprovalStatus.PENDING:
+        allowed = True
+    elif current_status == ApprovalStatus.PENDING and new_status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
+        # Check permissions for approval/rejection (Manager only)
+        # This function assumes the caller checks roles, but we can double check here if needed.
+        # For now, we rely on the router to check for MANAGER role.
+        allowed = True
+    else:
+        allowed = False
+
+    if not allowed:
+        raise HTTPException(status_code=409, detail=f"Invalid transition from {current_status} to {new_status}")
+
+    # Perform Update
+    update_query = """
+        UPDATE workbench.agent_drafts
+        SET status = $1, updated_at = NOW()
+        WHERE draft_id = $2
+        RETURNING *;
+    """
+    updated_row = await pool.fetchrow(update_query, new_status.value, draft_id)
+
+    # We return the response. Note: We might need to mock locking info or fetch it fully.
+    # For simplicity, we re-fetch via get_draft_by_id to get full context including lock state.
+    # But get_draft_by_id attempts to acquire lock.
+    # Since we are just changing status, let's just return the object directly to avoid side-effects.
+
+    # Construct response manually to avoid lock overhead or just assume default lock state for response
+    # Actually, best to return consistent response.
+    # Let's map it directly.
+
+    res_dict = dict(updated_row)
+    # Locking info might be null if we didn't join, but the table has the columns.
+    return DraftResponse.model_validate(res_dict)

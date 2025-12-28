@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS workbench.agent_drafts (
     oas_content JSONB NOT NULL, -- Stores the Agent definition
     runtime_env VARCHAR(64), -- Pip freeze hash for environment consistency
 
+    -- Approval Workflow
+    status VARCHAR(20) DEFAULT 'DRAFT' NOT NULL CHECK (status IN ('DRAFT', 'PENDING', 'APPROVED', 'REJECTED')),
+
     -- Search Optimization
     agent_tools_index TSVECTOR,
 
