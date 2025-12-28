@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+import json
 import time
 import unittest
 from unittest.mock import MagicMock, patch
@@ -16,6 +17,16 @@ import httpx
 import jwt
 from coreason_adlc_api.client import CoreasonClient
 from coreason_adlc_api.client_auth import ClientAuthManager
+from coreason_adlc_api.exceptions import (
+    AuthenticationError,
+    BudgetExceededError,
+    ClientError,
+    ComplianceViolationError,
+    CoreasonError,
+    RateLimitError,
+    ServerError,
+    ServiceUnavailableError,
+)
 
 
 class TestClientAuthManager(unittest.TestCase):
@@ -326,6 +337,11 @@ class TestCoreasonClient(unittest.TestCase):
     def setUp(self) -> None:
         # Reset singleton
         CoreasonClient._instance = None
+        self.client = CoreasonClient("http://test")
+
+        # Patch the underlying httpx client's request method for testing our wrapper
+        self.mock_request = MagicMock()
+        self.client.client.request = self.mock_request
 
     def tearDown(self) -> None:
         if CoreasonClient._instance:
@@ -333,53 +349,164 @@ class TestCoreasonClient(unittest.TestCase):
         CoreasonClient._instance = None
 
     def test_singleton(self) -> None:
+        # Reset singleton for this test
+        CoreasonClient._instance = None
         c1 = CoreasonClient("http://url1")
         c2 = CoreasonClient("http://url2")
         self.assertIs(c1, c2)
+        # c2 init returns early, so base_url remains url1
         self.assertEqual(c1.base_url, "http://url1")
-        # c2 init returns early, so base_url remains url1 (if it was overwritten it would be url2, but the code:
-        # if hasattr(self, "client"): return
-        # prevents re-init.
 
     def test_env_var_default(self) -> None:
+        # Need to clear instance before test
+        CoreasonClient._instance = None
         with patch.dict("os.environ", {"COREASON_API_URL": "http://env-url"}):
             client = CoreasonClient()
             self.assertEqual(client.base_url, "http://env-url")
 
     def test_set_project(self) -> None:
-        client = CoreasonClient("http://test")
-        client.set_project("auc-123")
-        self.assertEqual(client.client.headers["X-Coreason-Project-ID"], "auc-123")
+        self.client.set_project("auc-123")
+        self.assertEqual(self.client.client.headers["X-Coreason-Project-ID"], "auc-123")
 
     @patch("coreason_adlc_api.client.ClientAuthManager.get_token")
     def test_interceptor_injects_token(self, mock_get_token: MagicMock) -> None:
         mock_get_token.return_value = "secret_token"
 
-        client = CoreasonClient("http://test")
-
-        # We need to simulate a request to trigger the hook.
-        # We can use httpx.MockTransport or just mock the request object and call the hook manually
-        # to avoid making real network calls or complex mocking of the client internals.
-
-        # Approach 1: Call the hook directly
+        # We need to test the hook directly since we're mocking .request
         req = httpx.Request("GET", "http://test/api/resource")
-        client._inject_auth_header(req)
+        self.client._inject_auth_header(req)
         self.assertEqual(req.headers["Authorization"], "Bearer secret_token")
 
     @patch("coreason_adlc_api.client.ClientAuthManager.get_token")
     def test_interceptor_skips_auth_endpoints(self, mock_get_token: MagicMock) -> None:
         mock_get_token.return_value = "secret_token"
-        client = CoreasonClient("http://test")
 
         req = httpx.Request("POST", "http://test/auth/token")
-        client._inject_auth_header(req)
+        self.client._inject_auth_header(req)
         self.assertNotIn("Authorization", req.headers)
 
     @patch("coreason_adlc_api.client.ClientAuthManager.get_token")
     def test_interceptor_no_token(self, mock_get_token: MagicMock) -> None:
         mock_get_token.return_value = None
-        client = CoreasonClient("http://test")
 
         req = httpx.Request("GET", "http://test/api")
-        client._inject_auth_header(req)
+        self.client._inject_auth_header(req)
         self.assertNotIn("Authorization", req.headers)
+
+    def test_request_success(self) -> None:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 200
+        resp.is_success = True
+        self.mock_request.return_value = resp
+
+        result = self.client.request("GET", "/test")
+        self.assertEqual(result, resp)
+        self.mock_request.assert_called_with("GET", "/test")
+
+    def test_request_exceptions_401(self) -> None:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 401
+        resp.is_success = False
+        resp.json.return_value = {"detail": "Unauthorized"}
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(AuthenticationError) as cm:
+            self.client.request("GET", "/test")
+        self.assertEqual(cm.exception.status_code, 401)
+        self.assertEqual(cm.exception.message, "Unauthorized")
+
+    def test_request_exceptions_402(self) -> None:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 402
+        resp.is_success = False
+        resp.json.return_value = {"error": "Budget exceeded"}
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(BudgetExceededError) as cm:
+            self.client.request("POST", "/test")
+        self.assertEqual(cm.exception.message, "Budget exceeded")
+
+    def test_request_exceptions_422(self) -> None:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 422
+        resp.is_success = False
+        resp.json.return_value = {"detail": "PII detected"}
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(ComplianceViolationError):
+            self.client.request("PUT", "/test")
+
+    def test_request_exceptions_429(self) -> None:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 429
+        resp.is_success = False
+        resp.json.return_value = {"message": "Too many requests"}
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(RateLimitError):
+            self.client.request("GET", "/test")
+
+    def test_request_exceptions_generic_4xx(self) -> None:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 418
+        resp.is_success = False
+        resp.json.return_value = {"detail": "Teapot"}
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(ClientError):
+            self.client.request("GET", "/test")
+
+    def test_request_exceptions_503(self) -> None:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 503
+        resp.is_success = False
+        # Simulate JSON decode error using correct exception
+        resp.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
+        resp.text = "Service Unavailable"
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(ServiceUnavailableError) as cm:
+            self.client.request("GET", "/test")
+        self.assertEqual(cm.exception.message, "Service Unavailable")
+
+    def test_request_exceptions_generic_5xx(self) -> None:
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 500
+        resp.is_success = False
+        resp.json.return_value = {}
+        resp.text = ""
+        resp.reason_phrase = "Internal Server Error"
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(ServerError) as cm:
+            self.client.request("GET", "/test")
+        self.assertEqual(cm.exception.message, "Internal Server Error")
+
+    def test_request_fallback_exception(self) -> None:
+        # Case: status code outside mapped range but is_success is False
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 600
+        resp.is_success = False
+        resp.json.return_value = {"detail": "Weird"}
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(CoreasonError):
+            self.client.request("GET", "/test")
+
+    def test_convenience_methods(self) -> None:
+        # Setup success response
+        resp = MagicMock(spec=httpx.Response)
+        resp.is_success = True
+        self.mock_request.return_value = resp
+
+        self.client.get("/get", params={"q": 1})
+        self.mock_request.assert_called_with("GET", "/get", params={"q": 1})
+
+        self.client.post("/post", json={"a": 1})
+        self.mock_request.assert_called_with("POST", "/post", json={"a": 1})
+
+        self.client.put("/put", data="data")
+        self.mock_request.assert_called_with("PUT", "/put", data="data")
+
+        self.client.delete("/delete")
+        self.mock_request.assert_called_with("DELETE", "/delete")
