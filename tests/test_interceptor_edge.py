@@ -14,10 +14,11 @@ from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
-from coreason_adlc_api.app import app
-from coreason_adlc_api.config import settings
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+
+from coreason_adlc_api.app import app
+from coreason_adlc_api.config import settings
 
 
 @pytest.fixture

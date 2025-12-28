@@ -14,6 +14,9 @@ from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
+from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
+
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import (
     UserIdentity,
@@ -22,8 +25,6 @@ from coreason_adlc_api.auth.identity import (
     upsert_user,
 )
 from coreason_adlc_api.config import settings
-from fastapi import HTTPException
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

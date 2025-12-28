@@ -3,7 +3,7 @@ name = "coreason_adlc_api"
 version = "0.1.0"
 description = "Secure ADLC Middleware enforcing PII scrubbing, budget caps, and strict governance."
 authors = ["Gowtham A Rao <gowtham.rao@coreason.ai>"]
-license = "Prosperity-3.0"
+license = "Proprietary"
 readme = "README.md"
 packages = [{include = "coreason_adlc_api", from = "src"}]
 
@@ -47,7 +47,7 @@ name = "coreason_adlc_api"
 version = "0.1.0"
 description = "Secure ADLC Middleware enforcing PII scrubbing, budget caps, and strict governance."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12, <3.14"
 authors = [
     { name = "Gowtham A Rao", email = "gowtham.rao@coreason.ai" },
 ]

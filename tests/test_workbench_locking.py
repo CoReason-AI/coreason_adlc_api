@@ -15,8 +15,9 @@ from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock, refresh_lock, verify_lock_for_update
 from fastapi import HTTPException
+
+from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock, refresh_lock, verify_lock_for_update
 
 
 @pytest.fixture
