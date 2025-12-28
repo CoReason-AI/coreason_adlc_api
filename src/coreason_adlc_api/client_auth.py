@@ -14,6 +14,8 @@ import httpx
 import jwt
 import keyring
 
+from typing import Callable
+
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
 
 SERVICE_NAME = "coreason-adlc-api-key"
@@ -25,10 +27,14 @@ class ClientAuthManager:
     Handles OAuth 2.0 Device Flow for the client SDK.
     """
 
-    def login(self, base_url: str) -> str:
+    def login(self, base_url: str, user_code_callback: Callable[[str, str], None] | None = None) -> str:
         """
         Initiates the device flow, polls for the token, and stores it in the keyring.
         Returns the access token.
+
+        :param base_url: The base URL of the Coreason API.
+        :param user_code_callback: Optional callback to handle user code display (verification_uri, user_code).
+                                   Useful for UI frameworks like Streamlit.
         """
         # 1. Initiate Device Flow
         device_code_url = f"{base_url.rstrip('/')}/auth/device-code"
@@ -41,8 +47,11 @@ class ClientAuthManager:
         dc_data = DeviceCodeResponse(**resp.json())
 
         # 2. Display User Code
-        print(f"\nPlease visit: {dc_data.verification_uri}")
-        print(f"And enter code: {dc_data.user_code}\n")
+        if user_code_callback:
+            user_code_callback(dc_data.verification_uri, dc_data.user_code)
+        else:
+            print(f"\nPlease visit: {dc_data.verification_uri}")
+            print(f"And enter code: {dc_data.user_code}\n")
 
         # 3. Poll for Token
         token_url = f"{base_url.rstrip('/')}/auth/token"

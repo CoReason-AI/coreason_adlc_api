@@ -34,10 +34,6 @@ class CoreasonClient:
             return
 
         self.base_url = base_url or os.getenv("COREASON_API_URL", "http://localhost:8000")
-        if self.base_url is None:
-            # Fallback for strict typing, though os.getenv default covers it usually
-            self.base_url = "http://localhost:8000"
-
         self.auth = ClientAuthManager()
 
         # Initialize httpx Client with event hook for authentication
