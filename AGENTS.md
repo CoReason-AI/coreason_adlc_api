@@ -20,7 +20,7 @@
 ## **1. Project Overview**
 
 * **Type:** Python Application / Library
-* **Language:** Python 3.12, 3.13, 3.14 (Latest 3 versions)
+* **Language:** Python 3.12, 3.13 (Python 3.14 is supported by core, but excludes PII features due to dependency constraints).
 * **Package Manager:** Poetry
 * **License:** Prosperity Public License 3.0 (Proprietary/Dual-licensed)
 * **Project Structure:** src layout (source code resides in src/coreason_adlc_api)
@@ -105,7 +105,7 @@ Adhere to 12-Factor App principles. Use these standard variable names:
 ### **CI/CD Context**
 
 * **CI Environment:** GitHub Actions (Matrix testing on Ubuntu, Windows, MacOS).
-* **Python Versions:** Tests run against Python 3.12, 3.13, and 3.14.
+* **Python Versions:** Tests run against Python 3.12, 3.13, and 3.14 (conditional PII tests).
 
 ### **Docker Strategy**
 
