@@ -9,12 +9,11 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import time
+from typing import Callable
 
 import httpx
 import jwt
 import keyring
-
-from typing import Callable
 
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
 

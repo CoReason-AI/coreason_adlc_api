@@ -41,7 +41,7 @@ class CoreasonClient:
         # But `or` operator guarantees string if default is string.
         # However, for absolute mypy strictness where it might infer Optional[str]:
         if self.base_url is None:
-             self.base_url = "http://localhost:8000"
+            self.base_url = "http://localhost:8000"
 
         self.auth = ClientAuthManager()
 

@@ -214,12 +214,12 @@ class TestClientAuthManager(unittest.TestCase):
             "device_code": "dc",
             "user_code": "u",
             "verification_uri": "v",
-            "expires_in": 5, # Short expiry
+            "expires_in": 5,  # Short expiry
             "interval": 1,
         }
         device_resp.raise_for_status = MagicMock()
 
-        mock_post.return_value = device_resp # First call
+        mock_post.return_value = device_resp  # First call
 
         # Time sequence: start=0, loop1=1 (ok), loop2=6 (timeout)
         mock_time.side_effect = [0, 1, 6]
@@ -268,8 +268,8 @@ class TestClientAuthManager(unittest.TestCase):
 
         # Also need to mock keyring to avoid error on success
         with patch("coreason_adlc_api.client_auth.keyring.set_password"):
-             token = self.auth.login(self.base_url)
-             self.assertEqual(token, "tok")
+            token = self.auth.login(self.base_url)
+            self.assertEqual(token, "tok")
 
     @patch("coreason_adlc_api.client_auth.keyring.get_password")
     def test_get_token_missing(self, mock_get: MagicMock) -> None:
@@ -295,7 +295,7 @@ class TestClientAuthManager(unittest.TestCase):
 
         mock_get.return_value = "expired_token_string"
         with patch("coreason_adlc_api.client_auth.jwt.decode", side_effect=jwt.ExpiredSignatureError):
-             self.assertIsNone(self.auth.get_token())
+            self.assertIsNone(self.auth.get_token())
 
     @patch("coreason_adlc_api.client_auth.keyring.get_password")
     def test_get_token_malformed(self, mock_get: MagicMock) -> None:
