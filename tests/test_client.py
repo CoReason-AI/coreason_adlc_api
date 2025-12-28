@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import jwt
-import pytest
 from coreason_adlc_api.client import CoreasonClient
 from coreason_adlc_api.client_auth import ClientAuthManager
 
@@ -188,7 +187,13 @@ class TestClientAuthManager(unittest.TestCase):
     @patch("coreason_adlc_api.client_auth.httpx.post")
     def test_login_500_error(self, mock_post: MagicMock) -> None:
         device_resp = MagicMock()
-        device_resp.json.return_value = {"device_code": "dc", "user_code": "u", "verification_uri": "v", "expires_in": 300, "interval": 1}
+        device_resp.json.return_value = {
+            "device_code": "dc",
+            "user_code": "u",
+            "verification_uri": "v",
+            "expires_in": 300,
+            "interval": 1,
+        }
         device_resp.raise_for_status = MagicMock()
 
         resp_err = MagicMock()
