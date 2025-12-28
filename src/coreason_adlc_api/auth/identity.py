@@ -59,7 +59,7 @@ async def get_oidc_config() -> Dict[str, Any]:
             else:
                 logger.error("OIDC discovery missing jwks_uri")
 
-            return config
+            return config  # type: ignore[no-any-return]
     except httpx.HTTPError as e:
         logger.error(f"Failed to fetch OIDC configuration: {e}")
         raise HTTPException(
