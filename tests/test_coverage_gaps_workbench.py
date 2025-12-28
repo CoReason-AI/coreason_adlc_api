@@ -9,13 +9,14 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import uuid
+from datetime import datetime, timezone
 from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import parse_and_validate_token
-from coreason_adlc_api.workbench.schemas import ApprovalStatus
+from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftResponse
 from coreason_adlc_api.workbench.service import transition_draft_status
 from fastapi import HTTPException, Request
 from httpx import ASGITransport, AsyncClient
@@ -141,3 +142,34 @@ async def test_transition_invalid_from_pending(mock_pool: AsyncMock) -> None:
         await transition_draft_status(uuid.uuid4(), uuid.uuid4(), ApprovalStatus.DRAFT)
 
     assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_transition_success(mock_pool: AsyncMock) -> None:
+    # Scenario: DRAFT -> PENDING (Valid)
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    # 1st call: Fetch status (DRAFT)
+    # 2nd call: Update status (PENDING)
+
+    updated_row = {
+        "draft_id": draft_id,
+        "user_uuid": user_id,
+        "auc_id": "test-auc",
+        "title": "Success",
+        "oas_content": {},
+        "status": ApprovalStatus.PENDING,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc)
+    }
+
+    mock_pool.fetchrow.side_effect = [
+        {"status": ApprovalStatus.DRAFT},
+        updated_row
+    ]
+
+    resp = await transition_draft_status(draft_id, user_id, ApprovalStatus.PENDING)
+
+    assert resp.status == ApprovalStatus.PENDING
+    assert mock_pool.fetchrow.call_count == 2
