@@ -512,9 +512,7 @@ async def test_token_poll_non_UUID_oid_in_router(mock_oidc_setup: RSAPrivateKey)
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
     mock_client.__aexit__.return_value = None
-    mock_client.post.return_value = Response(
-        200, json={"access_token": valid_token}, request=Request("POST", "url")
-    )
+    mock_client.post.return_value = Response(200, json={"access_token": valid_token}, request=Request("POST", "url"))
 
     with patch("coreason_adlc_api.routers.auth.get_oidc_config", return_value={"token_endpoint": "http://url"}):
         with patch("coreason_adlc_api.routers.auth.get_http_client", return_value=mock_client):

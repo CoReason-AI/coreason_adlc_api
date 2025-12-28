@@ -8,7 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 import uuid
 from uuid import UUID
 
@@ -59,7 +59,7 @@ async def get_oidc_config() -> Dict[str, Any]:
             else:
                 logger.error("OIDC discovery missing jwks_uri")
 
-            return config  # type: ignore[no-any-return]
+            return cast(Dict[str, Any], config)
     except httpx.HTTPError as e:
         logger.error(f"Failed to fetch OIDC configuration: {e}")
         raise HTTPException(
