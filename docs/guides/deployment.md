@@ -13,11 +13,12 @@ pip install coreason-adlc-api
 ```
 
 ### Verification
-Once installed, you can verify the installation by checking the version:
+Once installed, you can verify the installation by checking the version. Run the following command to see usage instructions:
 
 ```bash
-coreason-api --help
+coreason-api
 ```
+*(This should print `Usage: coreason-api start`)*
 
 ## 2. Configuration (Environment Variables)
 
@@ -76,7 +77,7 @@ Critical security parameters.
 
 The package does not automatically migrate the database on startup to avoid race conditions in scaled deployments. You must run the DDL scripts manually or via a migration tool.
 
-The DDL is provided in the `ddl.sql` files within the package or in the documentation appendix.
+The DDL is provided in the `ddl.sql` files within the package (e.g., `src/coreason_adlc_api/auth/ddl.sql`) or in the documentation appendix.
 
 **Key Schemas to create:**
 1. `identity`
