@@ -44,8 +44,11 @@ class TestClientAuthEdgeCases(unittest.TestCase):
         # Setup successful auth flow mocks
         device_resp = MagicMock()
         device_resp.json.return_value = {
-            "device_code": "dc", "user_code": "uc", "verification_uri": "uri",
-            "expires_in": 300, "interval": 1
+            "device_code": "dc",
+            "user_code": "uc",
+            "verification_uri": "uri",
+            "expires_in": 300,
+            "interval": 1,
         }
 
         token_resp = MagicMock()
@@ -65,8 +68,11 @@ class TestClientAuthEdgeCases(unittest.TestCase):
         """Test that exceptions in the user callback propagate."""
         device_resp = MagicMock()
         device_resp.json.return_value = {
-            "device_code": "dc", "user_code": "uc", "verification_uri": "uri",
-            "expires_in": 300, "interval": 1
+            "device_code": "dc",
+            "user_code": "uc",
+            "verification_uri": "uri",
+            "expires_in": 300,
+            "interval": 1,
         }
         mock_post.return_value = device_resp
 
