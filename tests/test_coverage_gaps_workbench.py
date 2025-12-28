@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import parse_and_validate_token
-from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftResponse
+from coreason_adlc_api.workbench.schemas import ApprovalStatus
 from coreason_adlc_api.workbench.service import transition_draft_status
 from fastapi import HTTPException, Request
 from httpx import ASGITransport, AsyncClient
@@ -161,13 +161,10 @@ async def test_transition_success(mock_pool: AsyncMock) -> None:
         "oas_content": {},
         "status": ApprovalStatus.PENDING,
         "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
+        "updated_at": datetime.now(timezone.utc),
     }
 
-    mock_pool.fetchrow.side_effect = [
-        {"status": ApprovalStatus.DRAFT},
-        updated_row
-    ]
+    mock_pool.fetchrow.side_effect = [{"status": ApprovalStatus.DRAFT}, updated_row]
 
     resp = await transition_draft_status(draft_id, user_id, ApprovalStatus.PENDING)
 
