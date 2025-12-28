@@ -240,39 +240,15 @@ class TestCoreasonClientEdgeCases(unittest.TestCase):
 
     def test_redirect_handling(self) -> None:
         """Test handling of 302 Redirect (success path)."""
+        # Note: In our client implementation, if is_success is False (which it is for 302),
+        # it falls through to exceptions. But 302 is not mapped, so it raises CoreasonError.
+        # This test documents that behavior.
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = 302
-        resp.is_success = True  # Standard redirects are usually considered success or handled by client
-        # Note: httpx.Response.is_success is False for 3xx usually (is_redirect=True).
-        # Let's double check httpx behavior.
-        # is_success is True for 2xx.
-        # is_redirect is True for 3xx.
-        # But if we mock is_success=True it returns.
-        # If we mock is_success=False (default for 302), it goes to fallback CoreasonError?
-        # The code checks `if response.is_success: return response`.
-        # So for 302, it proceeds to error handling.
-        # And since 302 is not in 4xx/5xx map, it raises generic CoreasonError.
-        # This implies we expect the user to configure the client to follow redirects (so we get final 200)
-        # OR we should treat 3xx as success (return response) to let user handle it manually.
-        # The prompt said "If response.is_error ...".
-        # Wait, `is_error` is True for 4xx and 5xx. 3xx is NOT is_error.
-        # My code uses `if response.is_success: return response`.
-        # `is_success` is only 2xx.
-        # So 3xx falls through to exception logic.
-        # If 3xx is not is_error, what does handle_response do?
-        # It proceeds to `raise CoreasonError`.
-        # This might be unintended for 3xx if follow_redirects=False.
-        # BUT the requirement was "If response.is_success return response immediately. If response.is_error ...".
-        # It didn't specify what to do with 3xx (Redirects) or 1xx (Info).
-        # Usually redirects are handled by the client automatically.
-        # If manual, we usually want the response object.
-        # I should probably change `if response.is_success` to `if not response.is_error` or explicitly allow 3xx.
-        # However, for now, let's stick to the prompt.
-        # "If response.is_success, return response immediately."
-        # "If response.is_error: ... Mapping ... Raising"
-        # The prompt implies a binary: success or error.
-        # But httpx has 3 categories: success, redirect, error.
-        # If I strictly follow "If response.is_success return response", then 3xx will fall through and raise CoreasonError because 3xx is not mapped.
-        # I should probably update the code to `if not response.is_error: return response`.
-        # Let's test what happens currently with my mock.
-        pass
+        resp.is_success = False  # httpx defaults to False for 302
+        resp.json.side_effect = json.JSONDecodeError("Expect", "", 0)
+        resp.text = "Found"
+        self.mock_request.return_value = resp
+
+        with self.assertRaises(CoreasonError):
+            self.client.request("GET", "/redirect")
