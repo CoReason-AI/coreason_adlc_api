@@ -8,30 +8,27 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import datetime
 import uuid
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
-import jwt
 import pytest
 from coreason_adlc_api.app import app
-from coreason_adlc_api.config import settings
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
-def mock_auth_header() -> str:
+def mock_auth_header(mock_oidc_factory: Any) -> str:
     user_uuid = str(uuid.uuid4())
-    payload = {
-        "sub": user_uuid,
-        "oid": user_uuid,
-        "name": "Interceptor Edge Tester",
-        "email": "interceptor@coreason.ai",
-        "groups": [],
-        "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1),
-    }
-    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    token = mock_oidc_factory(
+        {
+            "sub": user_uuid,
+            "oid": user_uuid,
+            "name": "Interceptor Edge Tester",
+            "email": "interceptor@coreason.ai",
+        }
+    )
     return f"Bearer {token}"
 
 

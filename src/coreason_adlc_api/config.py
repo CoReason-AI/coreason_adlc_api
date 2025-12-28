@@ -54,10 +54,6 @@ class Settings(BaseSettings):
     OIDC_CLIENT_SECRET: str = "your-client-secret"
     OIDC_AUDIENCE: str = "https://api.coreason.ai"
 
-    # Legacy Auth (Retained for existing tests, do not use in new code)
-    JWT_SECRET: str = "dev-secret-change-me"
-    JWT_ALGORITHM: str = "HS256"
-
     # Logging
     LOG_LEVEL: str = "INFO"
 
