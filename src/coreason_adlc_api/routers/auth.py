@@ -8,10 +8,11 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import jwt
-import httpx
 import uuid
-from coreason_adlc_api.auth.identity import get_oidc_config, upsert_user, UserIdentity
+
+import httpx
+import jwt
+from coreason_adlc_api.auth.identity import UserIdentity, get_oidc_config, upsert_user
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.utils import get_http_client
@@ -28,10 +29,7 @@ async def initiate_device_code_flow() -> DeviceCodeResponse:
     oidc_config = await get_oidc_config()
     endpoint = oidc_config.get("device_authorization_endpoint")
     if not endpoint:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="IdP does not support device flow"
-        )
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="IdP does not support device flow")
 
     payload = {
         "client_id": settings.OIDC_CLIENT_ID,
@@ -55,8 +53,8 @@ async def initiate_device_code_flow() -> DeviceCodeResponse:
     except httpx.HTTPError as e:
         # Pass through error details if available, or generic error
         detail = "Failed to initiate device flow"
-        if hasattr(e, 'response') and e.response:
-             detail = e.response.text
+        if hasattr(e, "response") and e.response:
+            detail = e.response.text
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail) from e
 
 
@@ -91,15 +89,9 @@ async def poll_for_token(device_code: str = Body(..., embed=True)) -> TokenRespo
                 error_data = resp.json()
                 error_code = error_data.get("error")
                 if error_code in ["authorization_pending", "slow_down"]:
-                     raise HTTPException(
-                         status_code=status.HTTP_400_BAD_REQUEST,
-                         detail=error_code
-                     )
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_code)
                 elif error_code == "expired_token":
-                     raise HTTPException(
-                         status_code=status.HTTP_400_BAD_REQUEST,
-                         detail="expired_token"
-                     )
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="expired_token")
 
             resp.raise_for_status()
             data = resp.json()
@@ -118,7 +110,7 @@ async def poll_for_token(device_code: str = Body(..., embed=True)) -> TokenRespo
                     try:
                         oid = uuid.UUID(raw_oid)
                     except ValueError:
-                        oid = uuid.UUID(int=int(str(uuid.uuid5(uuid.NAMESPACE_DNS, raw_oid)).replace('-', ''), 16))
+                        oid = uuid.UUID(int=int(str(uuid.uuid5(uuid.NAMESPACE_DNS, raw_oid)).replace("-", ""), 16))
 
                     email = decoded.get("email")
                     name = decoded.get("name")
@@ -127,7 +119,7 @@ async def poll_for_token(device_code: str = Body(..., embed=True)) -> TokenRespo
                         oid=oid,
                         email=email,
                         full_name=name,
-                        groups=[] # Groups handled via graph or claims later
+                        groups=[],  # Groups handled via graph or claims later
                     )
                     await upsert_user(identity)
             except Exception:

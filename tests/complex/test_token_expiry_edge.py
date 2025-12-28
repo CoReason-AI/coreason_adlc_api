@@ -53,9 +53,7 @@ async def test_long_running_request_completes_after_expiry(mock_oidc_factory: An
             }
 
             # Start request immediately (token is valid)
-            resp = await ac.post(
-                "/api/v1/chat/completions", json=payload, headers={"Authorization": f"Bearer {token}"}
-            )
+            resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": f"Bearer {token}"})
 
             assert resp.status_code == 200
             data = resp.json()
@@ -82,9 +80,7 @@ async def test_request_fails_after_expiry(mock_oidc_factory: Any) -> None:
             "auc_id": "project-alpha",
         }
 
-        resp = await ac.post(
-            "/api/v1/chat/completions", json=payload, headers={"Authorization": f"Bearer {token}"}
-        )
+        resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": f"Bearer {token}"})
 
         # Should be 401 (or 403 depending on implementation, usually 401 for expiry)
         assert resp.status_code in [401, 403]

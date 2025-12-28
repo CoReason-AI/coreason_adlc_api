@@ -8,8 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-from typing import Any, Dict, List, Optional, cast
 import uuid
+from typing import Any, Dict, List, Optional, cast
 from uuid import UUID
 
 import httpx
@@ -84,7 +84,7 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
         await get_oidc_config()
 
     if _JWKS_CLIENT is None:
-         # Fallback if config failed or no JWKS URI
+        # Fallback if config failed or no JWKS URI
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Authentication service unavailable"
         )
@@ -111,7 +111,7 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
 
         raw_oid = payload.get("oid") or payload.get("sub")
         if not raw_oid:
-             raise ValueError("Token missing required claim: oid or sub")
+            raise ValueError("Token missing required claim: oid or sub")
 
         # Handle non-UUID subjects (e.g. Auth0 string IDs) by hashing or similar if strict UUID required
         # But `UserIdentity` expects UUID.
@@ -121,7 +121,7 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
             oid = UUID(raw_oid)
         except ValueError:
             # If not a valid UUID, generate a deterministic UUID from the string ID
-            oid = UUID(int=int(str(uuid.uuid5(uuid.NAMESPACE_DNS, raw_oid)).replace('-', ''), 16))
+            oid = UUID(int=int(str(uuid.uuid5(uuid.NAMESPACE_DNS, raw_oid)).replace("-", ""), 16))
 
         email = payload.get("email")
         name = payload.get("name")
@@ -132,10 +132,10 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
         raw_groups = payload.get("groups", [])
         groups = []
         for g in raw_groups:
-             try:
-                 groups.append(UUID(g))
-             except ValueError:
-                 continue # Skip non-UUID group IDs
+            try:
+                groups.append(UUID(g))
+            except ValueError:
+                continue  # Skip non-UUID group IDs
 
         return UserIdentity(oid=oid, email=email, groups=groups, full_name=name)
 
