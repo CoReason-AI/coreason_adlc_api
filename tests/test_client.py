@@ -83,7 +83,7 @@ class TestClientAuthManager(unittest.TestCase):
         mock_post.side_effect = [device_resp, token_resp]
 
         callback = MagicMock()
-        self.auth.login(self.base_url, user_code_callback=callback)
+        self.auth.login(self.base_url, callback=callback)
 
         callback.assert_called_once_with("http://verify-me", "USER-999")
 
