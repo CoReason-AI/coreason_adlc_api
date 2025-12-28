@@ -48,9 +48,11 @@ class Settings(BaseSettings):
     DAILY_BUDGET_LIMIT: float = 50.0  # Dollars
     ENTERPRISE_LICENSE_KEY: str | None = None
 
-    # Auth
-    JWT_SECRET: str = "dev-secret-change-me"
-    JWT_ALGORITHM: str = "HS256"
+    # Auth (OIDC)
+    OIDC_DOMAIN: str = "https://example.auth0.com"  # e.g. dev-xyz.us.auth0.com
+    OIDC_CLIENT_ID: str = "your-client-id"
+    OIDC_CLIENT_SECRET: str = "your-client-secret"
+    OIDC_AUDIENCE: str = "https://api.coreason.ai"
 
     # Logging
     LOG_LEVEL: str = "INFO"

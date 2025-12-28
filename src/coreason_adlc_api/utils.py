@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+import httpx
 import redis
 
 from coreason_adlc_api.config import settings
@@ -31,3 +32,11 @@ def get_redis_client() -> "redis.Redis[str]":
         )
     # Cast to Redis[str] because decode_responses=True in pool
     return redis.Redis(connection_pool=_redis_pool)  # type: ignore[return-value]
+
+
+def get_http_client() -> httpx.AsyncClient:
+    """
+    Returns an async HTTP client for external requests.
+    Useful for mocking in tests.
+    """
+    return httpx.AsyncClient()
