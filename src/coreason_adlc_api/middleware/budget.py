@@ -82,3 +82,25 @@ def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Budget service unavailable.",
         ) from e
+
+
+def check_budget_status(user_id: UUID) -> bool:
+    """
+    Read-only check if the user has exceeded their daily budget.
+    Returns True if valid (under limit), False if limit reached.
+    """
+    client = get_redis_client()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    key = f"budget:{today}:{user_id}"
+
+    try:
+        current_spend = client.get(key)
+        if current_spend is None:
+            return True
+
+        return float(current_spend) < settings.DAILY_BUDGET_LIMIT
+
+    except (redis.RedisError, ValueError, TypeError, Exception) as e:
+        logger.error(f"Error checking budget status: {e}")
+        # Fail closed for safety
+        return False

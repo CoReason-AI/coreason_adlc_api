@@ -56,3 +56,8 @@ class DraftResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ValidationResponse(BaseModel):
+    is_valid: bool
+    issues: list[str]  # e.g., ["PII Detected", "Budget Limit Reached"]
