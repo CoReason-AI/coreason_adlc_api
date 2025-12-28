@@ -123,4 +123,5 @@ class ClientAuthManager:
         if exp and time.time() > exp:
             return None
 
-        return token
+        # Explicitly cast to str because keyring might return Any in some environments, confusing mypy
+        return str(token)
