@@ -18,6 +18,13 @@ from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker
 from coreason_adlc_api.middleware.pii import scrub_pii_payload
 from fastapi import HTTPException
 
+try:
+    from presidio_analyzer import RecognizerResult  # noqa: F401
+    HAS_PRESIDIO = True
+except ImportError:
+    HAS_PRESIDIO = False
+
+
 # --- Budget Concurrency Test ---
 
 
@@ -122,6 +129,7 @@ async def test_circuit_breaker_half_open_logic() -> None:
 # --- PII Complex Test ---
 
 
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio-analyzer not installed")
 def test_pii_complex_overlap() -> None:
     """
     Test overlapping or adjacent entities to ensure index handling is robust.
@@ -138,6 +146,7 @@ def test_pii_complex_overlap() -> None:
     # Actually, Presidio results shouldn't overlap usually.
     # But let's test adjacent: "0123456789" -> A(0-5), B(5-10)
 
+    # Ensure import is safe
     from presidio_analyzer import RecognizerResult
 
     results = [RecognizerResult("A", 0, 5, 1.0), RecognizerResult("B", 5, 10, 1.0)]

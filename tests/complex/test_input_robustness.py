@@ -19,6 +19,12 @@ from coreason_adlc_api.app import app
 from coreason_adlc_api.config import settings
 from httpx import ASGITransport, AsyncClient
 
+try:
+    from presidio_analyzer import AnalyzerEngine  # noqa: F401
+    HAS_PRESIDIO = True
+except ImportError:
+    HAS_PRESIDIO = False
+
 
 @pytest.fixture
 def mock_auth_header() -> str:
@@ -77,8 +83,14 @@ async def test_chat_huge_payload(mock_auth_header: str) -> None:
             # Verify telemetry received the huge payload (scrubbed)
             mock_log.assert_called_once()
             call_kwargs = mock_log.call_args[1]
-            # Since the payload is > 1MB, the scrubber should replace it with the placeholder
-            assert call_kwargs["input_text"] == "<REDACTED: PAYLOAD TOO LARGE FOR PII ANALYSIS>"
+
+            # Assertion depends on environment
+            if HAS_PRESIDIO:
+                # Since the payload is > 1MB, the scrubber should replace it with the placeholder
+                assert call_kwargs["input_text"] == "<REDACTED: PAYLOAD TOO LARGE FOR PII ANALYSIS>"
+            else:
+                # Fallback message
+                assert call_kwargs["input_text"] == "<REDACTED: PII ANALYZER MISSING>"
 
 
 @pytest.mark.asyncio
