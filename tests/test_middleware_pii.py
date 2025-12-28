@@ -13,11 +13,20 @@ from unittest import mock
 
 import pytest
 from coreason_adlc_api.middleware.pii import scrub_pii_payload
-from presidio_analyzer import RecognizerResult
+
+try:
+    from presidio_analyzer import RecognizerResult
+
+    HAS_PRESIDIO = True
+except ImportError:
+    HAS_PRESIDIO = False
 
 
 @pytest.fixture
 def mock_analyzer() -> Any:
+    if not HAS_PRESIDIO:
+        pytest.skip("presidio-analyzer not installed")
+
     # Reset singleton state before test
     from coreason_adlc_api.middleware.pii import PIIAnalyzer
 
@@ -32,6 +41,7 @@ def mock_analyzer() -> Any:
     PIIAnalyzer._instance = None
 
 
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio-analyzer not installed")
 def test_scrub_pii_no_entities(mock_analyzer: Any) -> None:
     """Test scrubbing text with no PII."""
     text = "Hello world, this is a safe message."
@@ -41,6 +51,7 @@ def test_scrub_pii_no_entities(mock_analyzer: Any) -> None:
     assert result == text
 
 
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio-analyzer not installed")
 def test_scrub_pii_entities_replacement(mock_analyzer: Any) -> None:
     """Test replacement of detected entities."""
     text = "Contact me at 555-0199 or john.doe@example.com."
@@ -62,12 +73,14 @@ def test_scrub_pii_entities_replacement(mock_analyzer: Any) -> None:
     assert result == expected
 
 
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio-analyzer not installed")
 def test_scrub_pii_empty_input(mock_analyzer: Any) -> None:
     """Test empty input returns empty."""
     assert scrub_pii_payload("") == ""
     assert scrub_pii_payload(None) is None
 
 
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio-analyzer not installed")
 def test_scrub_pii_exception(mock_analyzer: Any) -> None:
     """Test error handling."""
     mock_analyzer.analyze.side_effect = Exception("Analyzer crashed")
@@ -76,6 +89,7 @@ def test_scrub_pii_exception(mock_analyzer: Any) -> None:
         scrub_pii_payload("some text")
 
 
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio-analyzer not installed")
 def test_scrub_pii_generic_value_error(mock_analyzer: Any) -> None:
     """Test handling of ValueError that is NOT length related."""
     mock_analyzer.analyze.side_effect = ValueError("Some internal value error")

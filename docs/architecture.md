@@ -30,14 +30,14 @@ The internal logic operates as a series of **Interceptors**.
 
 ```mermaid
 graph LR
-    User[User/Client] --> API[Coreason API]
-    API --> Auth[Auth & RBAC]
+    User["User/Client"] --> API[Coreason API]
+    API --> Auth["Auth & RBAC"]
     API --> Budget[Budget Guardrail]
     Budget -->|Allowed| Proxy[Inference Proxy]
-    Budget -->|Blocked| 402[402 Payment Required]
+    Budget -->|Blocked| Err402["402 Payment Required"]
     Proxy --> LLM[External LLM Provider]
     LLM --> Proxy
     Proxy --> PII[PII Scrubber]
-    PII --> Logs[Immutable Logs (DB)]
+    PII --> Logs["Immutable Logs (DB)"]
     PII --> User
 ```

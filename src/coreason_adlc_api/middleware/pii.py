@@ -8,8 +8,17 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+from typing import TYPE_CHECKING, Optional
+
 from loguru import logger
-from presidio_analyzer import AnalyzerEngine
+
+if TYPE_CHECKING:
+    from presidio_analyzer import AnalyzerEngine
+
+try:
+    from presidio_analyzer import AnalyzerEngine
+except ImportError:
+    AnalyzerEngine = None
 
 
 class PIIAnalyzer:
@@ -18,30 +27,20 @@ class PIIAnalyzer:
     """
 
     _instance = None
-    _analyzer: AnalyzerEngine | None = None
+    _analyzer: Optional["AnalyzerEngine"] = None
 
     def __new__(cls) -> "PIIAnalyzer":
         if cls._instance is None:
             cls._instance = super(PIIAnalyzer, cls).__new__(cls)
         return cls._instance
 
-    def get_analyzer(self) -> AnalyzerEngine:
+    def get_analyzer(self) -> Optional["AnalyzerEngine"]:
         if self._analyzer is None:
+            if AnalyzerEngine is None:
+                logger.warning("Presidio Analyzer not available (missing dependency). PII scrubbing will be disabled.")
+                return None
+
             logger.info("Initializing Presidio Analyzer Engine...")
-            # We use the default configuration which loads the "en_core_web_lg" model if available,
-            # or falls back to "en_core_web_sm".
-            # Requirement says: "en_core_web_lg" is selected.
-            # We should probably configure it explicitly if needed, but default usually works if model is installed.
-
-            # Note: In a real prod env with strict requirements, we might define the configuration explicitly.
-            # configuration = {
-            #     "nlp_engine_name": "spacy",
-            #     "models": [{"lang_code": "en", "model_name": "en_core_web_lg"}],
-            # }
-            # provider = NlpEngineProvider(nlp_configuration=configuration)
-            # nlp_engine = provider.create_engine()
-            # self._analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
-
             self._analyzer = AnalyzerEngine()
             logger.info("Presidio Analyzer Initialized.")
         return self._analyzer
@@ -57,6 +56,12 @@ def scrub_pii_payload(text_payload: str | None) -> str | None:
 
     try:
         analyzer = PIIAnalyzer().get_analyzer()
+        if analyzer is None:
+            # Fallback for when library is missing (e.g. Python 3.14)
+            # Failing closed is safest for a security tool, but failing open allows the app to run.
+            # Given the context, if the library is missing, we likely can't scrub.
+            # Returning a placeholder indicating failure.
+            return "<REDACTED: PII ANALYZER MISSING>"
 
         # Analyze
         results = analyzer.analyze(
@@ -64,12 +69,6 @@ def scrub_pii_payload(text_payload: str | None) -> str | None:
         )
 
         # Replace
-        # Presidio has an Anonymizer engine too, but the requirement specifically says:
-        # "Replace detected entities... with <REDACTED>."
-        # Actually it says "Replace detected entities (PHONE, PERSON, EMAIL) with <REDACTED>."
-        # And in the table: "Replace findings with <REDACTED {ENTITY_TYPE}>."
-        # I will follow the table: <REDACTED {ENTITY_TYPE}>.
-
         # We process results in reverse order to preserve indices
         sorted_results = sorted(results, key=lambda x: x.start, reverse=True)
 
@@ -79,12 +78,6 @@ def scrub_pii_payload(text_payload: str | None) -> str | None:
             start = result.start
             end = result.end
             entity_type = result.entity_type
-
-            # Map Presidio types to requested types if needed, or just use Presidio types.
-            # Presidio uses: PHONE_NUMBER, EMAIL_ADDRESS, PERSON
-            # Table says: PHONE, EMAIL, PERSON
-            # I'll normalize for cleanliness if preferred, or just use raw.
-            # "with <REDACTED {ENTITY_TYPE}>" -> <REDACTED PERSON>, <REDACTED PHONE_NUMBER>
 
             replacement = f"<REDACTED {entity_type}>"
             scrubbed_text[start:end] = replacement

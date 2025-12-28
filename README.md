@@ -105,8 +105,8 @@ async def update_existing_draft(draft_id: UUID, update: DraftUpdate, identity: U
 
 1.  Clone the repository:
     ```sh
-    git clone https://github.com/example/example.git
-    cd my_python_project
+    git clone https://github.com/CoReason-AI/coreason_adlc_api
+    cd coreason_adlc_api
     ```
 2.  Install dependencies:
     ```sh
