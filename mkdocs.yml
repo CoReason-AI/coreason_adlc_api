@@ -1,0 +1,43 @@
+site_name: Coreason ADLC API
+site_description: Secure ADLC Middleware enforcing PII scrubbing, budget caps, and strict governance.
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Getting Started: getting_started.md
+  - Architecture: architecture.md
+  - Security Architecture: security.md
+  - API Reference:
+    - Authentication: api/auth.md
+    - Workbench: api/workbench.md
+    - Vault: api/vault.md
+    - Interceptor: api/interceptor.md
+    - System: api/system.md
+  - Guides:
+    - Deployment & Operations: guides/deployment.md
+    - Compliance Audit: guides/compliance_audit.md
+    - Workflow & Lifecycle: guides/workflow_lifecycle.md
+    - Contributing: guides/contributing.md
+    - Authentication Flow: guides/authentication_flow.md
+    - Error Handling: guides/error_handling.md
