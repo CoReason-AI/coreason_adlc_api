@@ -25,6 +25,7 @@ presidio-analyzer = {version = "^2.2.360", python = "<3.14"}
 spacy = "^3.8.11"
 redis = "^7.1.0"
 httpx = "^0.28.1"
+keyring = "^24.0.0"
 
 [tool.poetry.group.dev.dependencies]
 types-redis = "^4.6.0.20241004"
