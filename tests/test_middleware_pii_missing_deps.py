@@ -1,8 +1,7 @@
 import sys
 from importlib import reload
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 from coreason_adlc_api.middleware import pii
 
 
@@ -38,7 +37,7 @@ def test_pii_import_error_coverage() -> None:
     try:
         # Mock sys.modules to raise ImportError for presidio_analyzer
         with patch.dict(sys.modules):
-            sys.modules["presidio_analyzer"] = None # type: ignore
+            sys.modules["presidio_analyzer"] = None  # type: ignore
             # If we set it to None, import might raise ModuleNotFoundError or ImportError depending on python version
             # Actually, setting to None usually means "not found" in sys.modules, so import logic proceeds to find it.
             # To FORCE failure, we need to make sure the loader fails.
@@ -66,13 +65,14 @@ def test_pii_import_error_coverage() -> None:
             # It raises ModuleNotFoundError.
 
             # So:
-            sys.modules["presidio_analyzer"] = None # type: ignore
+            sys.modules["presidio_analyzer"] = None  # type: ignore
 
             # Now import pii
             import coreason_adlc_api.middleware.pii as pii_module
+
             reload(pii_module)
 
-            assert pii_module.AnalyzerEngine is None
+            assert pii_module.AnalyzerEngine is None  # type: ignore[attr-defined]
 
     except Exception:
         # If anything fails, ensure we don't break the world.
@@ -86,4 +86,4 @@ def test_pii_import_error_coverage() -> None:
 
         # Reload pii correctly to restore state for other tests
         if "coreason_adlc_api.middleware.pii" in sys.modules:
-             reload(sys.modules["coreason_adlc_api.middleware.pii"])
+            reload(sys.modules["coreason_adlc_api.middleware.pii"])
