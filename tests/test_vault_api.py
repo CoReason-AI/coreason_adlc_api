@@ -8,30 +8,28 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import datetime
 import uuid
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
-import jwt
 import pytest
 from coreason_adlc_api.app import app
-from coreason_adlc_api.config import settings
 from coreason_adlc_api.vault.service import retrieve_decrypted_secret, store_secret
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
-def mock_auth_header() -> str:
+def mock_auth_header(mock_oidc_factory: Any) -> str:
     user_uuid = str(uuid.uuid4())
-    payload = {
-        "sub": user_uuid,
-        "oid": user_uuid,
-        "name": "Vault Tester",
-        "email": "vault@coreason.ai",
-        "groups": [],
-        "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1),
-    }
-    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    token = mock_oidc_factory(
+        {
+            "sub": user_uuid,
+            "oid": user_uuid,
+            "name": "Vault Tester",
+            "email": "vault@coreason.ai",
+        }
+    )
     return f"Bearer {token}"
 
 
@@ -137,8 +135,6 @@ async def test_store_secret_failure() -> None:
     ):
         mock_crypto.encrypt_secret.return_value = "encrypted-data"
 
-        from fastapi import HTTPException
-
         with pytest.raises(HTTPException) as exc:
             await store_secret("project-omega", "openai", "raw-key", uuid.uuid4())
 
@@ -156,8 +152,6 @@ async def test_store_secret_no_id_returned() -> None:
         patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto,
     ):
         mock_crypto.encrypt_secret.return_value = "encrypted-data"
-
-        from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc:
             await store_secret("project-omega", "openai", "raw-key", uuid.uuid4())

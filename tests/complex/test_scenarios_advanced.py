@@ -14,9 +14,7 @@ from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import jwt
 import pytest
-from coreason_adlc_api.config import settings
 from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock, verify_lock_for_update
 from coreason_adlc_api.workbench.schemas import DraftCreate, DraftResponse
 from fastapi import HTTPException
@@ -178,7 +176,7 @@ async def test_project_switching_race_condition(mock_pool: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_expired_jwt_during_long_operation() -> None:
+async def test_expired_jwt_during_long_operation(mock_oidc_factory: Any) -> None:
     """
     Scenario:
     JWT is valid at T=0.
@@ -188,8 +186,10 @@ async def test_expired_jwt_during_long_operation() -> None:
     """
     # 1. Generate a token that expires in 5 seconds
     exp = datetime.now(timezone.utc) + timedelta(seconds=5)
-    token_payload = {"oid": str(uuid4()), "email": "test@example.com", "groups": [], "name": "Test User", "exp": exp}
-    token = jwt.encode(token_payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    # Using the factory helper to sign with RS256
+    token = mock_oidc_factory(
+        {"oid": str(uuid4()), "email": "test@example.com", "groups": [], "name": "Test User", "exp": exp}
+    )
     header = f"Bearer {token}"
 
     # 2. Validate Token (Entry)
