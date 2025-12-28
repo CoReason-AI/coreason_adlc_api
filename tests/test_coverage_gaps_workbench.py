@@ -145,13 +145,10 @@ async def test_transition_invalid_from_pending(mock_pool: AsyncMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_transition_success(mock_pool: AsyncMock) -> None:
+async def test_transition_success_draft_to_pending(mock_pool: AsyncMock) -> None:
     # Scenario: DRAFT -> PENDING (Valid)
     draft_id = uuid.uuid4()
     user_id = uuid.uuid4()
-
-    # 1st call: Fetch status (DRAFT)
-    # 2nd call: Update status (PENDING)
 
     updated_row = {
         "draft_id": draft_id,
@@ -169,4 +166,54 @@ async def test_transition_success(mock_pool: AsyncMock) -> None:
     resp = await transition_draft_status(draft_id, user_id, ApprovalStatus.PENDING)
 
     assert resp.status == ApprovalStatus.PENDING
+    assert mock_pool.fetchrow.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_transition_success_rejected_to_pending(mock_pool: AsyncMock) -> None:
+    # Scenario: REJECTED -> PENDING (Valid)
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    updated_row = {
+        "draft_id": draft_id,
+        "user_uuid": user_id,
+        "auc_id": "test-auc",
+        "title": "Resubmit",
+        "oas_content": {},
+        "status": ApprovalStatus.PENDING,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+    mock_pool.fetchrow.side_effect = [{"status": ApprovalStatus.REJECTED}, updated_row]
+
+    resp = await transition_draft_status(draft_id, user_id, ApprovalStatus.PENDING)
+
+    assert resp.status == ApprovalStatus.PENDING
+    assert mock_pool.fetchrow.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_transition_success_pending_to_approved(mock_pool: AsyncMock) -> None:
+    # Scenario: PENDING -> APPROVED (Valid)
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    updated_row = {
+        "draft_id": draft_id,
+        "user_uuid": user_id,
+        "auc_id": "test-auc",
+        "title": "Approved",
+        "oas_content": {},
+        "status": ApprovalStatus.APPROVED,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+    mock_pool.fetchrow.side_effect = [{"status": ApprovalStatus.PENDING}, updated_row]
+
+    resp = await transition_draft_status(draft_id, user_id, ApprovalStatus.APPROVED)
+
+    assert resp.status == ApprovalStatus.APPROVED
     assert mock_pool.fetchrow.call_count == 2
