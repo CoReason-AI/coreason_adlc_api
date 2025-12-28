@@ -12,8 +12,16 @@ from uuid import UUID
 
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
 from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.middleware.budget import check_budget_status
+from coreason_adlc_api.middleware.pii import scrub_pii_recursive
 from coreason_adlc_api.workbench.locking import refresh_lock
-from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, DraftResponse, DraftUpdate
+from coreason_adlc_api.workbench.schemas import (
+    ApprovalStatus,
+    DraftCreate,
+    DraftResponse,
+    DraftUpdate,
+    ValidationResponse,
+)
 from coreason_adlc_api.workbench.service import (
     create_draft,
     get_draft_by_id,
@@ -112,6 +120,36 @@ async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_
     """
     await refresh_lock(draft_id, identity.oid)
     return {"success": True}
+
+
+@router.post("/validate", response_model=ValidationResponse)
+async def validate_draft(
+    draft: DraftCreate, identity: UserIdentity = Depends(parse_and_validate_token)
+) -> ValidationResponse:
+    """
+    Stateless validation of a draft.
+    Checks for:
+    1. Budget limits (read-only)
+    2. PII presence (recursive)
+    Does NOT save to DB.
+    """
+    issues = []
+
+    # 1. Budget Check
+    if not check_budget_status(identity.oid):
+        issues.append("Budget Limit Reached")
+
+    # 2. PII Check
+    try:
+        scrubbed_content = scrub_pii_recursive(draft.oas_content)
+        # Deep comparison
+        if scrubbed_content != draft.oas_content:
+            issues.append("PII Detected")
+    except Exception:
+        # Fail-closed if PII check fails (e.g. Analyzer missing handled in middleware, but other errors)
+        issues.append("PII Check Failed")
+
+    return ValidationResponse(is_valid=(len(issues) == 0), issues=issues)
 
 
 # --- Approval Workflow Endpoints ---

@@ -8,7 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from loguru import logger
 
@@ -94,3 +94,18 @@ def scrub_pii_payload(text_payload: str | None) -> str | None:
     except Exception as e:
         logger.error(f"PII Scrubbing failed: {e}")
         raise ValueError("PII Scrubbing failed.") from e
+
+
+def scrub_pii_recursive(data: Any) -> Any:
+    """
+    Recursively scans and scrubs PII from the input data structure.
+    Supported types: dict, list, str.
+    """
+    if isinstance(data, dict):
+        return {k: scrub_pii_recursive(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [scrub_pii_recursive(item) for item in data]
+    elif isinstance(data, str):
+        return scrub_pii_payload(data)
+    else:
+        return data
