@@ -165,3 +165,22 @@ class CoreasonClient:
         # Explicitly cast to satisfy mypy strict check [no-any-return]
         issues: list[str] = data.get("issues", [])
         return issues
+
+    def get_model_config_schema(self, model_id: str) -> dict[str, Any]:
+        """
+        Fetches the JSON Schema for the given model's configuration parameters.
+        Used for Server-Driven UI rendering.
+        """
+        # Ensure path matches the router mount in app.py
+        # app.py: app.include_router(models.router, prefix="/api/v1")
+        # routers/models.py: prefix="/models"
+        # full path: /api/v1/models/{model_id}/schema
+        # Using self.client.get directly to allow explicit _handle_response usage as requested
+        response = self.client.get(f"/api/v1/models/{model_id}/schema")
+
+        # Ensure Domain Exceptions are raised correctly
+        self._handle_response(response)
+
+        # Explicitly cast for mypy compliance
+        schema: dict[str, Any] = response.json()
+        return schema
