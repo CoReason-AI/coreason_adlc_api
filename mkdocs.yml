@@ -35,9 +35,10 @@ nav:
     - Interceptor: api/interceptor.md
     - System: api/system.md
   - Guides:
+    - Client SDK: guides/client_sdk.md
+    - Authentication Flow: guides/authentication_flow.md
+    - Error Handling: guides/error_handling.md
     - Deployment & Operations: guides/deployment.md
     - Compliance Audit: guides/compliance_audit.md
     - Workflow & Lifecycle: guides/workflow_lifecycle.md
     - Contributing: guides/contributing.md
-    - Authentication Flow: guides/authentication_flow.md
-    - Error Handling: guides/error_handling.md

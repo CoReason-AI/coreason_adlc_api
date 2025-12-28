@@ -1,8 +1,20 @@
 # Error Handling
 
-The Coreason ADLC API uses standard HTTP status codes to indicate the success or failure of a request.
+The Coreason ADLC API uses standard HTTP status codes combined with a structured error response format.
 
-## Common Status Codes
+## Standard Error Response
+
+All API errors return a JSON body with a `detail` field explaining the error.
+
+```json
+{
+  "detail": "Budget exceeded for user 1234-..."
+}
+```
+
+Some errors may include additional fields depending on the context.
+
+## HTTP Status Codes
 
 | Code | Description | Meaning |
 | :--- | :--- | :--- |
@@ -10,45 +22,46 @@ The Coreason ADLC API uses standard HTTP status codes to indicate the success or
 | `201` | Created | The resource was successfully created. |
 | `400` | Bad Request | The request was malformed or invalid. |
 | `401` | Unauthorized | Authentication is required or failed. |
-| `403` | Forbidden | Authenticated, but you do not have permission (RBAC). |
+| `402` | Payment Required | **Budget Exceeded**. The user has hit their daily limit. |
+| `403` | Forbidden | Authenticated, but lacking permission (RBAC) for the project. |
 | `404` | Not Found | The requested resource does not exist. |
 | `422` | Validation Error | The request body failed schema validation. |
+| `423` | Locked | Resource is locked by another user (Workbench Drafts). |
+| `429` | Too Many Requests | Rate limit exceeded. |
 | `500` | Internal Server Error | An unexpected error occurred on the server. |
+| `502/503/504` | Service Unavailable | Upstream LLM provider or database issue. |
 
-## Specific Error Conditions
+## Domain Exception Mapping (Python SDK)
 
-### 402 Payment Required (Budget Exceeded)
+The Python Client SDK (`CoreasonClient`) automatically maps these HTTP status codes to a specific hierarchy of Python exceptions defined in `coreason_adlc_api.exceptions`.
 
-If a user exceeds their daily budget limit, the Interceptor will return a `402` error.
+### Exception Hierarchy
 
-```json
-{
-  "detail": "Budget exceeded"
-}
+*   `CoreasonError` (Base Class)
+    *   `ClientError` (4xx)
+        *   `AuthenticationError` (401/403)
+        *   `BudgetExceededError` (402)
+        *   `ComplianceViolationError` (422)
+        *   `RateLimitError` (429)
+    *   `ServerError` (5xx)
+        *   `ServiceUnavailableError` (502/503/504)
+
+### Handling Exceptions
+
+When using the `CoreasonClient`, you should catch these specific exceptions to handle errors gracefully.
+
+```python
+from coreason_adlc_api.client import CoreasonClient
+from coreason_adlc_api.exceptions import BudgetExceededError, AuthenticationError
+
+client = CoreasonClient()
+
+try:
+    response = client.get("/api/v1/workbench/drafts")
+except BudgetExceededError:
+    print("You have run out of budget for today.")
+except AuthenticationError:
+    print("Please login again.")
+except CoreasonError as e:
+    print(f"An unexpected API error occurred: {e}")
 ```
-
-**Resolution**: Wait for the daily reset (UTC midnight) or request a budget increase.
-
-### 423 Locked (Resource Locked)
-
-When editing drafts in the Workbench, a pessimistic lock is used. If you try to edit a draft locked by another user, you will receive a `423` error.
-
-```json
-{
-  "detail": "Draft is locked by another user"
-}
-```
-
-**Resolution**: Wait for the lock to expire or for the other user to finish editing.
-
-### 403 Forbidden (RBAC)
-
-If you attempt to access a project (`auc_id`) that is not mapped to your SSO groups, you will receive a `403`.
-
-```json
-{
-  "detail": "User is not authorized to access project <auc_id>"
-}
-```
-
-**Resolution**: Request access to the project via your Identity Provider group membership.
