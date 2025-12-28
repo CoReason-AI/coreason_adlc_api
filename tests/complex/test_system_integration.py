@@ -14,12 +14,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
-
 from coreason_adlc_api.auth.identity import UserIdentity
 from coreason_adlc_api.routers.interceptor import ChatCompletionRequest, chat_completions
 from coreason_adlc_api.routers.workbench import create_new_draft
 from coreason_adlc_api.workbench.schemas import DraftCreate
+from fastapi import HTTPException
 
 
 @pytest.fixture

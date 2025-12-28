@@ -13,10 +13,9 @@ from typing import Generator
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import HTTPException
-
 from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, DraftUpdate
 from coreason_adlc_api.workbench.service import create_draft, get_draft_by_id, get_drafts, update_draft
+from fastapi import HTTPException
 
 
 @pytest.fixture

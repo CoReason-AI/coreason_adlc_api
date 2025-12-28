@@ -12,9 +12,8 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from presidio_analyzer import RecognizerResult
-
 from coreason_adlc_api.middleware.pii import scrub_pii_payload
+from presidio_analyzer import RecognizerResult
 
 
 @pytest.fixture

@@ -10,8 +10,6 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.workbench.locking import refresh_lock
@@ -23,6 +21,7 @@ from coreason_adlc_api.workbench.service import (
     transition_draft_status,
     update_draft,
 )
+from fastapi import APIRouter, Depends, HTTPException, status
 
 router = APIRouter(prefix="/workbench", tags=["Workbench"])
 

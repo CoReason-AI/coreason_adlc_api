@@ -11,7 +11,7 @@ packages = [{include = "coreason_adlc_api", from = "src"}]
 coreason-api = "coreason_adlc_api.main:main"
 
 [tool.poetry.dependencies]
-python = ">=3.12, <3.14"
+python = ">=3.12, <3.15"
 loguru = "^0.7.2"
 fastapi = "^0.127.0"
 uvicorn = {extras = ["standard"], version = "^0.40.0"}
@@ -21,7 +21,7 @@ asyncpg = "^0.31.0"
 pyjwt = "^2.10.1"
 email-validator = "^2.3.0"
 litellm = "^1.80.11"
-presidio-analyzer = "^2.2.360"
+presidio-analyzer = {version = "^2.2.360", python = "<3.14"}
 spacy = "^3.8.11"
 redis = "^7.1.0"
 
@@ -47,7 +47,7 @@ name = "coreason_adlc_api"
 version = "0.1.0"
 description = "Secure ADLC Middleware enforcing PII scrubbing, budget caps, and strict governance."
 readme = "README.md"
-requires-python = ">=3.12, <3.14"
+requires-python = ">=3.12, <3.15"
 authors = [
     { name = "Gowtham A Rao", email = "gowtham.rao@coreason.ai" },
 ]
@@ -55,6 +55,8 @@ license = { file = "LICENSE" }
 classifiers = [
     "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
 
