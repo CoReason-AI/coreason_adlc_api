@@ -1,8 +1,15 @@
+from typing import Any, Callable
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from coreason_adlc_api.app import app
 from coreason_adlc_api.middleware.budget import check_budget_status
 from coreason_adlc_api.middleware.pii import scrub_pii_recursive
+from coreason_adlc_api.workbench.schemas import DraftCreate
 
 
 # Test PII Recursion
@@ -36,6 +43,13 @@ def test_scrub_pii_recursive_list() -> None:
         scrubbed = scrub_pii_recursive(data)
         assert scrubbed[0] == "<REDACTED PERSON>"
         assert scrubbed[1] == "Safe"
+
+
+def test_scrub_pii_recursive_primitive() -> None:
+    """Test recursion on a primitive type (int) to cover the 'else' branch."""
+    data = 12345
+    scrubbed = scrub_pii_recursive(data)
+    assert scrubbed == 12345
 
 
 # Test Budget Check Status
@@ -107,3 +121,59 @@ def test_client_validate_draft() -> None:
 
         assert issues == ["PII Detected"]
         mock_post.assert_called_with("/workbench/validate", json=draft_data)
+
+
+def test_workbench_validate_endpoint_integration(
+    mock_oidc_factory: Callable[[dict[str, Any] | None], str]
+) -> None:
+    """
+    Integration test for POST /workbench/validate to cover router logic.
+    """
+    client = TestClient(app)
+    token = mock_oidc_factory(None)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    draft_payload = {
+        "auc_id": "test-project",
+        "title": "Validation Test",
+        "oas_content": {"content": "Secret Data"}
+    }
+
+    # Mock the internal logic checks
+    with patch("coreason_adlc_api.routers.workbench.check_budget_status") as mock_budget, \
+         patch("coreason_adlc_api.routers.workbench.scrub_pii_recursive") as mock_pii:
+
+        # Scenario 1: All Valid
+        mock_budget.return_value = True
+        mock_pii.return_value = draft_payload["oas_content"]  # No change -> No PII
+
+        resp = client.post("/api/v1/workbench/validate", json=draft_payload, headers=headers)
+        # Note: Depending on router registration, prefix might be /api/v1/workbench or just /workbench
+        # Memory says "/api/v1" prefix.
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["is_valid"] is True
+        assert data["issues"] == []
+
+        # Scenario 2: Budget Failure
+        mock_budget.return_value = False
+        resp = client.post("/api/v1/workbench/validate", json=draft_payload, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["is_valid"] is False
+        assert "Budget Limit Reached" in resp.json()["issues"]
+
+        # Scenario 3: PII Detected
+        mock_budget.return_value = True
+        mock_pii.return_value = {"content": "<REDACTED>"} # Changed
+        resp = client.post("/api/v1/workbench/validate", json=draft_payload, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["is_valid"] is False
+        assert "PII Detected" in resp.json()["issues"]
+
+        # Scenario 4: PII Check Exception
+        mock_pii.side_effect = Exception("PII Crash")
+        resp = client.post("/api/v1/workbench/validate", json=draft_payload, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["is_valid"] is False
+        assert "PII Check Failed" in resp.json()["issues"]
