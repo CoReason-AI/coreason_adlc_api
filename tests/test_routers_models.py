@@ -11,10 +11,9 @@
 import unittest
 from unittest.mock import MagicMock
 
-from fastapi.testclient import TestClient
-
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import parse_and_validate_token
+from fastapi.testclient import TestClient
 
 
 class TestModelsRouter(unittest.TestCase):
@@ -82,8 +81,5 @@ class TestModelsRouter(unittest.TestCase):
         # Note: TestClient calls the app directly. `parse_and_validate_token`
         # checks `Authorization` header.
 
-        response = self.client.get(
-            "/api/v1/models/gpt-4/schema",
-            headers={"Authorization": "Bearer invalid_token"}
-        )
+        response = self.client.get("/api/v1/models/gpt-4/schema", headers={"Authorization": "Bearer invalid_token"})
         self.assertEqual(response.status_code, 401)
