@@ -1,7 +1,8 @@
 import sys
 from importlib import reload
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import pytest
 from coreason_adlc_api.middleware import pii
 
 
@@ -24,50 +25,101 @@ def test_pii_missing_dependency_runtime_check() -> None:
         assert result == "<REDACTED: PII ANALYZER MISSING>"
 
 
+def test_pii_logic_with_mocked_engine() -> None:
+    """
+    Test the 'happy path' logic (analyzer instantiation and replacement) even if the real library is missing.
+    This ensures 100% coverage of the code lines that would otherwise be unreachable on Python 3.14.
+    """
+    # Create a mock for AnalyzerEngine class
+    mock_engine_cls = MagicMock()
+    mock_instance = mock_engine_cls.return_value
+
+    # Mock analysis results
+    result_mock = MagicMock()
+    result_mock.entity_type = "PHONE_NUMBER"
+    result_mock.start = 0
+    result_mock.end = 12
+    result_mock.score = 1.0
+
+    mock_instance.analyze.return_value = [result_mock]
+
+    # Patch AnalyzerEngine in the module with our mock class
+    with patch("coreason_adlc_api.middleware.pii.AnalyzerEngine", mock_engine_cls):
+        # Reset singleton
+        pii.PIIAnalyzer._instance = None
+        pii.PIIAnalyzer._analyzer = None
+
+        analyzer = pii.PIIAnalyzer().get_analyzer()
+        assert analyzer is not None
+        assert analyzer == mock_instance
+
+        # Test scrubbing logic
+        text = "555-555-5555"
+        result = pii.scrub_pii_payload(text)
+        assert result == "<REDACTED PHONE_NUMBER>"
+
+
+def test_pii_logic_exception_handling_with_mocked_engine() -> None:
+    """
+    Test exception handling logic using mocks to ensure coverage on Python 3.14.
+    """
+    mock_engine_cls = MagicMock()
+    mock_instance = mock_engine_cls.return_value
+
+    # 1. Test ValueError (Size limit)
+    mock_instance.analyze.side_effect = ValueError("exceeds maximum text length")
+
+    with patch("coreason_adlc_api.middleware.pii.AnalyzerEngine", mock_engine_cls):
+        pii.PIIAnalyzer._instance = None
+        pii.PIIAnalyzer._analyzer = None
+
+        result = pii.scrub_pii_payload("Huge text")
+        assert result == "<REDACTED: PAYLOAD TOO LARGE FOR PII ANALYSIS>"
+
+    # 2. Test Generic ValueError (e.g. invalid config)
+    # This covers the "except ValueError" block fallthrough
+    mock_instance.analyze.side_effect = ValueError("Invalid configuration")
+
+    with patch("coreason_adlc_api.middleware.pii.AnalyzerEngine", mock_engine_cls):
+        pii.PIIAnalyzer._instance = None
+        pii.PIIAnalyzer._analyzer = None
+
+        with pytest.raises(ValueError, match="PII Scrubbing failed"):
+            pii.scrub_pii_payload("Bad Config")
+
+    # 3. Test Generic Exception
+    mock_instance.analyze.side_effect = Exception("Boom")
+
+    with patch("coreason_adlc_api.middleware.pii.AnalyzerEngine", mock_engine_cls):
+        pii.PIIAnalyzer._instance = None
+        pii.PIIAnalyzer._analyzer = None
+
+        with pytest.raises(ValueError, match="PII Scrubbing failed"):
+            pii.scrub_pii_payload("Normal text")
+
+
+def test_pii_empty_payload() -> None:
+    """
+    Test empty payload short-circuit.
+    """
+    assert pii.scrub_pii_payload("") == ""
+    assert pii.scrub_pii_payload(None) is None
+
+
 def test_pii_import_error_coverage() -> None:
     """
     Test the ImportError block by forcing a reload of the module while presidio_analyzer is masked.
     """
-    # We need to remove presidio_analyzer from sys.modules temporarily to force re-import
-    # and make it fail.
-
-    # Store original module
     original_module = sys.modules.get("presidio_analyzer")
 
     try:
-        # Mock sys.modules to raise ImportError for presidio_analyzer
         with patch.dict(sys.modules):
             sys.modules["presidio_analyzer"] = None  # type: ignore
-            # If we set it to None, import might raise ModuleNotFoundError or ImportError depending on python version
-            # Actually, setting to None usually means "not found" in sys.modules, so import logic proceeds to find it.
-            # To FORCE failure, we need to make sure the loader fails.
 
-            # Better strategy: Patch builtins.__import__? Too risky.
-
-            # If I set it to None in sys.modules, Python 3.x treats it as "module not found" cache?
-            # No, if it is in sys.modules as None, import raises ImportError.
-
-            # Let's try reloading pii module.
-            # We must be careful not to break other tests.
-
-            # We need to unimport pii first?
+            # Unload pii module to force re-import logic
             if "coreason_adlc_api.middleware.pii" in sys.modules:
                 del sys.modules["coreason_adlc_api.middleware.pii"]
 
-            # Now import it again
-            # We need to simulate ImportError when it tries `from presidio_analyzer import AnalyzerEngine`
-
-            # Side effect of import is hard to mock if we don't control the environment.
-            # But if sys.modules['presidio_analyzer'] is None, 'import presidio_analyzer' raises ImportError?
-            # Let's verify this behavior.
-
-            # Actually, `sys.modules['name'] = None` is an optimization to prevent import.
-            # It raises ModuleNotFoundError.
-
-            # So:
-            sys.modules["presidio_analyzer"] = None  # type: ignore
-
-            # Now import pii
             import coreason_adlc_api.middleware.pii as pii_module
 
             reload(pii_module)
@@ -75,15 +127,12 @@ def test_pii_import_error_coverage() -> None:
             assert pii_module.AnalyzerEngine is None  # type: ignore[attr-defined]
 
     except Exception:
-        # If anything fails, ensure we don't break the world.
         raise
     finally:
-        # Restore
         if original_module:
             sys.modules["presidio_analyzer"] = original_module
         else:
             sys.modules.pop("presidio_analyzer", None)
 
-        # Reload pii correctly to restore state for other tests
         if "coreason_adlc_api.middleware.pii" in sys.modules:
             reload(sys.modules["coreason_adlc_api.middleware.pii"])
