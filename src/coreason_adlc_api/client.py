@@ -154,3 +154,14 @@ class CoreasonClient:
     def delete(self, url: str, **kwargs: Any) -> httpx.Response:
         """Convenience wrapper for DELETE requests."""
         return self.request("DELETE", url, **kwargs)
+
+    def validate_draft(self, draft: dict[str, Any]) -> list[str]:
+        """
+        Validates a draft against PII and Budget constraints remotely.
+        Returns a list of issues found (empty list if valid).
+        """
+        response = self.post("/workbench/validate", json=draft)
+        data = response.json()
+        # Explicitly cast to satisfy mypy strict check [no-any-return]
+        issues: list[str] = data.get("issues", [])
+        return issues
