@@ -511,3 +511,22 @@ class TestCoreasonClient(unittest.TestCase):
 
         self.client.delete("/delete")
         self.mock_request.assert_called_with("DELETE", "/delete")
+
+    def test_get_model_config_schema(self) -> None:
+        # Mock response
+        mock_schema = {"$schema": "...", "properties": {"temp": {}}}
+        resp = MagicMock(spec=httpx.Response)
+        resp.is_success = True
+        resp.status_code = 200
+        resp.json.return_value = mock_schema
+        self.mock_request.return_value = resp
+
+        schema = self.client.get_model_config_schema("test-model")
+
+        self.assertEqual(schema, mock_schema)
+
+        # Verify call args more loosely because httpx.Client.get injects defaults
+        self.assertTrue(self.mock_request.called)
+        call_args = self.mock_request.call_args
+        self.assertEqual(call_args[0][0], "GET")
+        self.assertEqual(call_args[0][1], "/api/v1/models/test-model/schema")

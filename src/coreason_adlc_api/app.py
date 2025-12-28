@@ -17,7 +17,7 @@ from loguru import logger
 
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, init_db
-from coreason_adlc_api.routers import auth, interceptor, system, vault, workbench
+from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
 from coreason_adlc_api.telemetry.worker import telemetry_worker
 
 
@@ -78,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(vault.router, prefix="/api/v1")
     app.include_router(workbench.router, prefix="/api/v1")
+    app.include_router(models.router, prefix="/api/v1")
     app.include_router(interceptor.router, prefix="/api/v1")
     app.include_router(system.router, prefix="/api/v1")
 
