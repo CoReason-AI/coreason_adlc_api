@@ -340,8 +340,9 @@ class TestCoreasonClient(unittest.TestCase):
         self.client = CoreasonClient("http://test")
 
         # Patch the underlying httpx client's request method for testing our wrapper
-        self.mock_request = MagicMock()
-        self.client.client.request = self.mock_request
+        self.patcher = patch.object(self.client.client, "request")
+        self.mock_request = self.patcher.start()
+        self.addCleanup(self.patcher.stop)
 
     def tearDown(self) -> None:
         if CoreasonClient._instance:

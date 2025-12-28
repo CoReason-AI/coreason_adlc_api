@@ -23,34 +23,41 @@ class CoreasonError(Exception):
 
 class ClientError(CoreasonError):
     """Exception raised for 4xx Client Errors."""
+
     pass
 
 
 class ServerError(CoreasonError):
     """Exception raised for 5xx Server Errors."""
+
     pass
 
 
 class AuthenticationError(ClientError):
     """Exception raised for 401/403 Authentication Errors."""
+
     pass
 
 
 class BudgetExceededError(ClientError):
     """Exception raised for 402 Budget Exceeded Errors."""
+
     pass
 
 
 class ComplianceViolationError(ClientError):
     """Exception raised for 422 Compliance/Policy Violation Errors."""
+
     pass
 
 
 class RateLimitError(ClientError):
     """Exception raised for 429 Rate Limit Errors."""
+
     pass
 
 
 class ServiceUnavailableError(ServerError):
     """Exception raised for 502/503/504 Service Unavailable Errors."""
+
     pass
