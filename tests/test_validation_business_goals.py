@@ -22,6 +22,13 @@ from coreason_adlc_api.workbench.locking import acquire_draft_lock
 from coreason_adlc_api.workbench.schemas import AccessMode
 from fastapi import HTTPException
 
+try:
+    import presidio_analyzer  # noqa: F401
+
+    HAS_PRESIDIO = True
+except ImportError:
+    HAS_PRESIDIO = False
+
 
 @pytest.fixture
 def mock_redis() -> Generator[MagicMock, None, None]:
@@ -88,6 +95,7 @@ async def test_bg01_centralized_budget_control(mock_redis: MagicMock) -> None:
     )
 
 
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio-analyzer not installed")
 @pytest.mark.asyncio
 async def test_bg02_toxic_telemetry_prevention(mock_redis_telemetry: MagicMock) -> None:
     """
