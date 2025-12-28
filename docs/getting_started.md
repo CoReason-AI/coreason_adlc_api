@@ -37,18 +37,29 @@ The application is configured via environment variables. Create a `.env` file or
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `APP_ENV` | Environment (`development`, `testing`, `production`) | `development` |
-| `DEBUG` | Enable debug mode | `False` |
-| `SECRET_KEY` | Secret for cryptographic signing | *Required* |
-| `DATABASE_URL` | PostgreSQL connection string | *Required* |
-| `REDIS_URL` | Redis connection string | *Required* |
-| `JWT_SECRET` | Secret for JWT signing | *Required* |
+| `DEBUG` | Enable debug mode (auto-reload) | `False` |
+| `ENCRYPTION_KEY` | **CRITICAL:** 32-byte hex string for Vault encryption | *Required in Prod* |
+| `POSTGRES_HOST` | Database host | `localhost` |
+| `POSTGRES_PORT` | Database port | `5432` |
+| `POSTGRES_USER` | Database user | `postgres` |
+| `POSTGRES_PASSWORD` | Database password | `postgres` |
+| `POSTGRES_DB` | Database name | `coreason_db` |
+| `REDIS_HOST` | Redis host | `localhost` |
+| `REDIS_PORT` | Redis port | `6379` |
+| `JWT_SECRET` | Secret for JWT signing | *Required in Prod* |
 | `JWT_ALGORITHM` | Algorithm for JWT signing (e.g., HS256) | `HS256` |
 
 ## Running the Application
 
 ### Development Mode
 
-To run the API locally with hot-reloading:
+To run the API locally with hot-reloading enabled, ensure `DEBUG=True` in your environment or `.env` file, then run:
+
+```bash
+poetry run coreason-api start
+```
+
+Alternatively, you can run Uvicorn directly:
 
 ```bash
 poetry run uvicorn coreason_adlc_api.app:app --reload
