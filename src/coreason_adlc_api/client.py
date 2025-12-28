@@ -162,4 +162,6 @@ class CoreasonClient:
         """
         response = self.post("/workbench/validate", json=draft)
         data = response.json()
-        return data.get("issues", [])
+        # Explicitly cast to satisfy mypy strict check [no-any-return]
+        issues: list[str] = data.get("issues", [])
+        return issues
