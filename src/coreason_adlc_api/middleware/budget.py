@@ -18,16 +18,50 @@ from loguru import logger
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.utils import get_redis_client
 
+# Atomic check-and-update script
+# Keys: [budget_key]
+# Args: [cost, limit, expiry_seconds]
+# Returns: [is_allowed (1/0), new_balance, is_new_key (1/0)]
+BUDGET_LUA_SCRIPT = """
+local key = KEYS[1]
+local cost = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local expiry = tonumber(ARGV[3])
+
+local current = tonumber(redis.call('GET', key) or "0")
+
+if current + cost > limit then
+    return {0, current, 0}
+end
+
+local new_balance = redis.call('INCRBYFLOAT', key, cost)
+local is_new = 0
+
+-- Check if this is the first write (roughly, if balance == cost)
+-- Or we can check TTL. But INCRBYFLOAT doesn't reset TTL.
+-- If new_balance is exactly cost, it was 0 before (or expired).
+-- But float equality can be tricky. Let's rely on PTTL.
+local ttl = redis.call('PTTL', key)
+
+if ttl == -1 then
+    -- No expiry set, so it's likely new (or persisted forever).
+    redis.call('EXPIRE', key, expiry)
+    is_new = 1
+end
+
+return {1, new_balance, is_new}
+"""
+
 
 def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
     """
     Checks if the user has enough budget for the estimated cost.
     Raises HTTPException(402) if budget is exceeded.
 
-    Logic:
-    1. Fetch current daily spend from Redis.
-    2. Check if current + estimated > limit.
-    3. Update the spend in Redis (optimistic allocation).
+    Logic (Atomic Lua):
+    1. Check if current + estimated <= limit.
+    2. If yes, increment and return Success.
+    3. If no, return Failure (no change).
     """
     if estimated_cost < 0:
         raise ValueError("Estimated cost cannot be negative.")
@@ -39,34 +73,25 @@ def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
     key = f"budget:{today}:{user_id}"
 
     try:
-        # Atomic check and update could be better with Lua script,
-        # but for now we do simple GET then INCRBYFLOAT.
-        # Since this is a "Guardrail", strict consistency is less critical than availability,
-        # but we want to avoid overspending.
-        # However, multiple requests could race.
-        # Ideally: valid = redis.eval(lua_script...)
+        # Execute Lua Script
+        # Result: [is_allowed (int), new_balance (float/str), is_new (int)]
+        result = client.eval(  # type: ignore[no-untyped-call]
+            BUDGET_LUA_SCRIPT,
+            1,  # numkeys
+            key,
+            estimated_cost,
+            settings.DAILY_BUDGET_LIMIT,
+            172800,  # 2 days expiry
+        )
 
-        # Let's use INCRBYFLOAT which returns the new value.
-        # If new value > limit, we decrement it back and reject?
-        # Or we check first.
+        # Redis might return ints as ints, floats as strings or floats depending on client version/decoding.
+        is_allowed = int(result[0])
+        _new_balance = float(result[1])
 
-        # Strategy: Check first (GET), then if ok, proceed? No, that has race conditions.
-        # Strategy: Increment first. If result > limit, Decrement and Reject.
-        # This is "Reservation".
-
-        new_spend = client.incrbyfloat(key, estimated_cost)
-
-        # Set expiry if new key (e.g. 48 hours to allow audit/logging later)
-        if new_spend == estimated_cost:
-            client.expire(key, 172800)  # 2 days
-
-        if new_spend > settings.DAILY_BUDGET_LIMIT:
-            # Revert the charge
-            client.incrbyfloat(key, -estimated_cost)
-
+        if not is_allowed:
             logger.warning(
                 f"Budget exceeded for user {user_id}. "
-                f"Attempted: ${estimated_cost}, New Total would be: ${new_spend}, Limit: ${settings.DAILY_BUDGET_LIMIT}"
+                f"Attempted: ${estimated_cost}, Limit: ${settings.DAILY_BUDGET_LIMIT}"
             )
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -82,6 +107,14 @@ def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Budget service unavailable.",
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in budget check: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error checking budget.",
         ) from e
 
 

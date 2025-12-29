@@ -78,11 +78,14 @@ async def test_bg01_centralized_budget_control(mock_redis: MagicMock) -> None:
     settings.DAILY_BUDGET_LIMIT = 50.0
 
     # Scenario 1: Budget available
-    mock_redis.incrbyfloat.return_value = 49.5
+    # Redis eval returns [is_allowed, new_balance, is_new]
+    # Allow 0.5 cost, resulting in 49.5 balance
+    mock_redis.eval.return_value = [1, 49.5, 0]
     assert check_budget_guardrail(user_id, 0.5) is True
 
     # Scenario 2: Budget exceeded
-    mock_redis.incrbyfloat.return_value = 50.5
+    # Reject 1.0 cost because it exceeds limit. Return status 0.
+    mock_redis.eval.return_value = [0, 50.5, 0]
 
     with pytest.raises(HTTPException) as exc:
         check_budget_guardrail(user_id, 1.0)
@@ -90,10 +93,9 @@ async def test_bg01_centralized_budget_control(mock_redis: MagicMock) -> None:
     assert exc.value.status_code == 402
     assert "limit exceeded" in exc.value.detail
 
-    # Verify rollback
-    mock_redis.incrbyfloat.assert_called_with(
-        f"budget:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}:{user_id}", -1.0
-    )
+    # Verify atomic call (eval) was used, NOT incrbyfloat
+    assert not mock_redis.incrbyfloat.called
+    mock_redis.eval.assert_called()
 
 
 @pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio-analyzer not installed")
@@ -147,7 +149,7 @@ async def test_fr_api_003_pessimistic_locking(mock_db_pool: MagicMock) -> None:
 
     conn = mock_db_pool.acquire.return_value.__aenter__.return_value
 
-    from datetime import datetime, timedelta, timezone
+    from datetime import timedelta, timezone
 
     now = datetime.now(timezone.utc)
     future = now + timedelta(seconds=30)
@@ -172,7 +174,7 @@ async def test_fr_api_004_safe_view_override(mock_db_pool: MagicMock) -> None:
 
     conn = mock_db_pool.acquire.return_value.__aenter__.return_value
 
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     future = datetime.now(timezone.utc) + timedelta(seconds=30)
 
