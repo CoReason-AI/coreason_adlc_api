@@ -15,7 +15,12 @@ import pytest
 from fastapi import HTTPException
 
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
-from coreason_adlc_api.middleware.proxy import execute_inference_proxy, get_api_key_for_model, proxy_breaker
+from coreason_adlc_api.middleware.proxy import (
+    _breakers,
+    execute_inference_proxy,
+    get_api_key_for_model,
+    get_circuit_breaker,
+)
 
 
 @pytest.mark.asyncio
@@ -91,13 +96,14 @@ async def test_proxy_generic_exception() -> None:
     with (
         mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key,
         mock.patch("coreason_adlc_api.middleware.proxy.litellm.acompletion") as mock_completion,
+        mock.patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider,
     ):
         mock_get_key.return_value = "key"
         mock_completion.side_effect = Exception("Unexpected Error")
+        mock_get_provider.return_value = ("openai", "model", "k", "b")
 
         # Reset breaker state
-        proxy_breaker.state = "closed"
-        proxy_breaker.failure_history.clear()
+        _breakers.clear()
 
         with pytest.raises(HTTPException) as exc:
             await execute_inference_proxy([], "gpt-4", "proj-1")
@@ -111,20 +117,18 @@ async def test_proxy_breaker_open_exception() -> None:
     """Explicitly test the CircuitBreakerOpenError catch block in proxy."""
     # We can mock the breaker instance on the proxy module to force it to raise
 
-    # But proxy_breaker is imported.
-    # We can manually set state to open.
-    proxy_breaker.state = "open"
-    proxy_breaker.last_failure_time = time.time()
+    # We assume provider is openai
+    breaker = get_circuit_breaker("openai")
+    breaker.state = "open"
+    breaker.last_failure_time = time.time()
 
     # Need to mock get_api_key otherwise it might fail first (if we didn't mock DB)
-    # But get_api_key is called BEFORE breaker check?
-    # No:
-    # api_key = await get_api_key_for_model(...)
-    # async with proxy_breaker: ...
-    # So we need get_api_key to succeed.
 
-    with mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key:
+    with mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key, \
+         mock.patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider:
+
         mock_get_key.return_value = "key"
+        mock_get_provider.return_value = ("openai", "model", "k", "b")
 
         with pytest.raises(HTTPException) as exc:
             await execute_inference_proxy([], "gpt-4", "proj-1")

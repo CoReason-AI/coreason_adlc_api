@@ -14,7 +14,7 @@ from unittest import mock
 import pytest
 from fastapi import HTTPException
 
-from coreason_adlc_api.middleware.proxy import execute_inference_proxy, proxy_breaker
+from coreason_adlc_api.middleware.proxy import execute_inference_proxy, get_circuit_breaker
 
 
 @pytest.fixture
@@ -85,18 +85,17 @@ async def test_proxy_circuit_breaker(mock_db_pool: Any, mock_vault_crypto: Any, 
     """Test that circuit breaker opens after failures."""
     mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
 
+    # Get the specific breaker for 'openai' (default mock provider)
+    breaker = get_circuit_breaker("openai")
+
     # Reset breaker (manual reset for custom class)
-    proxy_breaker.state = "closed"
-    proxy_breaker.failure_history.clear()
+    breaker.state = "closed"
+    breaker.failure_history.clear()
 
     # Manually trip
-    proxy_breaker.state = "open"
-    proxy_breaker.last_failure_time = 1234567890  # Long ago? No, wait.
-    # If last_failure_time is old, it might try half-open.
-    # We want it to be RECENT to ensure it stays open.
+    breaker.state = "open"
     import time
-
-    proxy_breaker.last_failure_time = time.time()
+    breaker.last_failure_time = time.time()
 
     # Next call should raise ServiceUnavailable (Circuit Open) immediately
     mock_litellm.acompletion.side_effect = None
@@ -108,4 +107,4 @@ async def test_proxy_circuit_breaker(mock_db_pool: Any, mock_vault_crypto: Any, 
     assert "Upstream model service is currently unstable" in exc.value.detail
 
     # Cleanup
-    proxy_breaker.state = "closed"
+    breaker.state = "closed"
