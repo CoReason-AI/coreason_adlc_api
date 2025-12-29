@@ -73,6 +73,6 @@ def mock_oidc_factory(
                 payload.update(payload_overrides)
 
             # Cast for mypy strictness on jwt.encode arguments
-            return cast(str, jwt.encode(payload, private_key, algorithm="RS256"))
+            return jwt.encode(payload, private_key, algorithm="RS256")
 
         yield _create_token
