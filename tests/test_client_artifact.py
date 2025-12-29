@@ -1,7 +1,8 @@
 
-import json
 from unittest.mock import MagicMock
+
 from coreason_adlc_api.client import CoreasonClient
+
 
 def test_client_promote_draft() -> None:
     # Setup
@@ -29,7 +30,7 @@ def test_client_promote_draft() -> None:
             # Verify signature injection
             json_body = kwargs.get("json", {})
             if isinstance(json_body, dict):
-                 assert json_body.get("signature") == "valid_sig"
+                assert json_body.get("signature") == "valid_sig"
             return mock_resp_publish
         return MagicMock()
 
