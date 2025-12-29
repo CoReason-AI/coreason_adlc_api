@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 try:
     from presidio_analyzer import AnalyzerEngine
 except ImportError:
-    AnalyzerEngine = None
+    AnalyzerEngine = None  # type: ignore[assignment,misc,unused-ignore]
 
 
 class PIIAnalyzer:
@@ -101,11 +101,56 @@ def scrub_pii_recursive(data: Any) -> Any:
     Recursively scans and scrubs PII from the input data structure.
     Supported types: dict, list, str.
     """
-    if isinstance(data, dict):
-        return {k: scrub_pii_recursive(v) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [scrub_pii_recursive(item) for item in data]
-    elif isinstance(data, str):
+    if isinstance(data, str):
         return scrub_pii_payload(data)
-    else:
+    if not isinstance(data, (dict, list)):
         return data
+
+    # Iterative stack-based approach to avoid RecursionError
+    # We rebuild the structure bottom-up or by processing nodes.
+    # Since we need to modify the structure (or return a new one),
+    # let's traverse and build a new structure.
+    # But rebuilding a deeply nested structure iteratively can be tricky.
+    # Easier: Use a stack to traverse, but constructing the return value is hard.
+    # Alternative: Use a stack of (parent, key, value) to process?
+    #
+    # Actually, for just scrubbing strings in leaves, we can do it.
+    # But we need to return a new object (we shouldn't mutate input in place ideally,
+    # though the original recursive function returned new lists/dicts).
+
+    # Let's use an iterative deep copy with modification.
+    new_data: Any
+    if isinstance(data, dict):
+        new_data = data.copy()
+    else:  # data is list
+        new_data = data[:]
+
+    stack = [(new_data, data)]  # (target_container, source_container)
+
+    while stack:
+        target, source = stack.pop()
+
+        iterator: Any
+        if isinstance(source, dict):
+            iterator = source.items()
+        else:  # source is list
+            iterator = enumerate(source)
+
+        for k, v in iterator:
+            if isinstance(v, str):
+                # Scrub string
+                target[k] = scrub_pii_payload(v)
+            elif isinstance(v, (dict, list)):
+                # Create new container
+                new_sub: Any
+                if isinstance(v, dict):
+                    new_sub = v.copy()
+                else:
+                    new_sub = v[:]
+
+                target[k] = new_sub
+                stack.append((new_sub, v))
+            else:
+                target[k] = v
+
+    return new_data
