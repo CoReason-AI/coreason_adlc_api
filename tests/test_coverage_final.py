@@ -124,9 +124,10 @@ async def test_proxy_breaker_open_exception() -> None:
 
     # Need to mock get_api_key otherwise it might fail first (if we didn't mock DB)
 
-    with mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key, \
-         mock.patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider:
-
+    with (
+        mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key,
+        mock.patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider,
+    ):
         mock_get_key.return_value = "key"
         mock_get_provider.return_value = ("openai", "model", "k", "b")
 

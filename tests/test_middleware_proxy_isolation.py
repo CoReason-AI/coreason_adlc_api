@@ -1,9 +1,10 @@
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
-from coreason_adlc_api.middleware.proxy import execute_inference_proxy, _breakers
-from typing import Any
+
+from coreason_adlc_api.middleware.proxy import _breakers, execute_inference_proxy
+
 
 @pytest.mark.asyncio
 async def test_circuit_breaker_isolation() -> None:
@@ -15,10 +16,11 @@ async def test_circuit_breaker_isolation() -> None:
     _breakers.clear()
 
     # Mock dependencies
-    with patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model", new_callable=AsyncMock) as mock_get_key, \
-         patch("coreason_adlc_api.middleware.proxy.litellm.acompletion", new_callable=AsyncMock) as mock_acompletion, \
-         patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider:
-
+    with (
+        patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model", new_callable=AsyncMock) as mock_get_key,
+        patch("coreason_adlc_api.middleware.proxy.litellm.acompletion", new_callable=AsyncMock) as mock_acompletion,
+        patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider,
+    ):
         # Setup mocks
         mock_get_key.return_value = "dummy-key"
 
@@ -37,9 +39,7 @@ async def test_circuit_breaker_isolation() -> None:
         for _ in range(5):
             with pytest.raises(HTTPException):
                 await execute_inference_proxy(
-                    messages=[{"role": "user", "content": "hi"}],
-                    model="fail-model",
-                    auc_id="proj-1"
+                    messages=[{"role": "user", "content": "hi"}], model="fail-model", auc_id="proj-1"
                 )
 
         # Check that provider-fail breaker is open
@@ -52,9 +52,7 @@ async def test_circuit_breaker_isolation() -> None:
         mock_acompletion.return_value = "Success"
 
         response = await execute_inference_proxy(
-            messages=[{"role": "user", "content": "hi"}],
-            model="ok-model",
-            auc_id="proj-1"
+            messages=[{"role": "user", "content": "hi"}], model="ok-model", auc_id="proj-1"
         )
 
         assert response == "Success"

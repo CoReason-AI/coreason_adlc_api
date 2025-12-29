@@ -95,6 +95,7 @@ async def test_proxy_circuit_breaker(mock_db_pool: Any, mock_vault_crypto: Any, 
     # Manually trip
     breaker.state = "open"
     import time
+
     breaker.last_failure_time = time.time()
 
     # Next call should raise ServiceUnavailable (Circuit Open) immediately
