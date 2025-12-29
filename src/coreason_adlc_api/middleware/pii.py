@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+from threading import Lock
 from typing import TYPE_CHECKING, Any, Optional
 
 from loguru import logger
@@ -17,8 +18,9 @@ if TYPE_CHECKING:
 
 try:
     from presidio_analyzer import AnalyzerEngine
+    _PRESIDIO_AVAILABLE = True
 except ImportError:
-    AnalyzerEngine = None
+    _PRESIDIO_AVAILABLE = False
 
 
 class PIIAnalyzer:
@@ -26,23 +28,28 @@ class PIIAnalyzer:
     Singleton wrapper for Microsoft Presidio Analyzer to ensure the model is loaded only once.
     """
 
-    _instance = None
+    _instance: Optional["PIIAnalyzer"] = None
+    _lock: Lock = Lock()
     _analyzer: Optional["AnalyzerEngine"] = None
 
     def __new__(cls) -> "PIIAnalyzer":
-        if cls._instance is None:
-            cls._instance = super(PIIAnalyzer, cls).__new__(cls)
+        if not cls._instance:
+            with cls._lock:
+                if not cls._instance:
+                    cls._instance = super(PIIAnalyzer, cls).__new__(cls)
         return cls._instance
 
     def get_analyzer(self) -> Optional["AnalyzerEngine"]:
         if self._analyzer is None:
-            if AnalyzerEngine is None:
-                logger.warning("Presidio Analyzer not available (missing dependency). PII scrubbing will be disabled.")
-                return None
+            with self._lock:
+                if self._analyzer is None:
+                    if not _PRESIDIO_AVAILABLE:
+                        logger.warning("Presidio Analyzer not available (missing dependency). PII scrubbing will be disabled.")
+                        return None
 
-            logger.info("Initializing Presidio Analyzer Engine...")
-            self._analyzer = AnalyzerEngine()
-            logger.info("Presidio Analyzer Initialized.")
+                    logger.info("Initializing Presidio Analyzer Engine...")
+                    self._analyzer = AnalyzerEngine()
+                    logger.info("Presidio Analyzer Initialized.")
         return self._analyzer
 
 

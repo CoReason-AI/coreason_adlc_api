@@ -1,4 +1,4 @@
-from typing import Any, Callable, Generator, cast
+from typing import Any, Callable, Generator
 from unittest.mock import MagicMock, patch
 
 import jwt
@@ -72,6 +72,6 @@ def mock_oidc_factory(
                 payload.update(payload_overrides)
 
             # Cast for mypy strictness on jwt.encode arguments
-            return cast(str, jwt.encode(payload, private_key, algorithm="RS256"))
+            return jwt.encode(payload, private_key, algorithm="RS256")
 
         yield _create_token

@@ -11,8 +11,8 @@ def test_pii_missing_dependency_runtime_check() -> None:
     Test that if AnalyzerEngine is None (runtime check), the code behaves correctly.
     This simulates the state where the library was not imported successfully.
     """
-    # Patch AnalyzerEngine to None in the module
-    with patch("coreason_adlc_api.middleware.pii.AnalyzerEngine", None):
+    # Patch _PRESIDIO_AVAILABLE to False in the module
+    with patch("coreason_adlc_api.middleware.pii._PRESIDIO_AVAILABLE", False):
         # Reset singleton
         pii.PIIAnalyzer._instance = None
         pii.PIIAnalyzer._analyzer = None
@@ -124,7 +124,8 @@ def test_pii_import_error_coverage() -> None:
 
             reload(pii_module)
 
-            assert pii_module.AnalyzerEngine is None  # type: ignore[attr-defined]
+            assert pii_module._PRESIDIO_AVAILABLE is False
+            assert not hasattr(pii_module, "AnalyzerEngine")
 
     except Exception:
         raise
