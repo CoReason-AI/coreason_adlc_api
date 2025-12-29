@@ -3,6 +3,7 @@ from importlib import reload
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from coreason_adlc_api.middleware import pii
 
 

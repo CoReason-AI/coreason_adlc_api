@@ -13,6 +13,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from coreason_adlc_api.middleware.telemetry import async_log_telemetry
 from coreason_adlc_api.telemetry.worker import telemetry_worker
 
