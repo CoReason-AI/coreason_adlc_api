@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 try:
     from presidio_analyzer import AnalyzerEngine
 except ImportError:
-    AnalyzerEngine = None  # type: ignore[assignment,misc]
+    AnalyzerEngine = None  # type: ignore[assignment,misc,unused-ignore]
 
 
 class PIIAnalyzer:
@@ -119,6 +119,7 @@ def scrub_pii_recursive(data: Any) -> Any:
     # though the original recursive function returned new lists/dicts).
 
     # Let's use an iterative deep copy with modification.
+    new_data: Any
     if isinstance(data, dict):
         new_data = data.copy()
     else:  # data is list
@@ -129,6 +130,7 @@ def scrub_pii_recursive(data: Any) -> Any:
     while stack:
         target, source = stack.pop()
 
+        iterator: Any
         if isinstance(source, dict):
             iterator = source.items()
         else:  # source is list
@@ -140,6 +142,7 @@ def scrub_pii_recursive(data: Any) -> Any:
                 target[k] = scrub_pii_payload(v)
             elif isinstance(v, (dict, list)):
                 # Create new container
+                new_sub: Any
                 if isinstance(v, dict):
                     new_sub = v.copy()
                 else:

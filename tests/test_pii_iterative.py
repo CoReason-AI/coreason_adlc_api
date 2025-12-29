@@ -1,12 +1,14 @@
-from coreason_adlc_api.middleware.pii import scrub_pii_recursive
-import pytest
+from typing import Any
 
-def test_deep_recursion_iterative():
+from coreason_adlc_api.middleware.pii import scrub_pii_recursive
+
+
+def test_deep_recursion_iterative() -> None:
     """
     Ensures that the new iterative implementation handles deep structures without RecursionError.
     """
     depth = 2000
-    deep_structure = "leaf"
+    deep_structure: Any = "leaf"
     for _ in range(depth):
         deep_structure = {"k": deep_structure}
 
@@ -18,7 +20,8 @@ def test_deep_recursion_iterative():
         current = current["k"]
     assert current == "leaf"
 
-def test_scrub_pii_iterative_branches():
+
+def test_scrub_pii_iterative_branches() -> None:
     """
     Tests various branches of the iterative scrub_pii_recursive function to ensure 100% coverage.
     """
@@ -30,7 +33,7 @@ def test_scrub_pii_iterative_branches():
     # mocking scrub_pii_payload implicitely by expectation (assuming it returns same string if no PII)
     result_list = scrub_pii_recursive(input_list)
     assert result_list == ["hello", 123, {"key": "world"}]
-    assert result_list is not input_list # Should be a copy
+    assert result_list is not input_list  # Should be a copy
 
     # 3. Nested list in dict
     input_nested = {"a": [1, "test"]}
