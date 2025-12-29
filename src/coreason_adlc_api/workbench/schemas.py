@@ -74,4 +74,4 @@ class AgentArtifact(BaseModel):
 
 
 class PublishRequest(BaseModel):
-    signature: str
+    pass
