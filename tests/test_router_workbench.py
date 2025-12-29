@@ -9,15 +9,17 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import uuid
-from typing import AsyncGenerator, Generator
+from datetime import datetime, timezone
+from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from coreason_adlc_api.app import app
-from coreason_adlc_api.auth.identity import parse_and_validate_token
-from coreason_adlc_api.workbench.schemas import AgentArtifact, DraftResponse, ValidationResponse
 from fastapi import Request
 from httpx import ASGITransport, AsyncClient
+
+from coreason_adlc_api.app import app
+from coreason_adlc_api.auth.identity import parse_and_validate_token
+from coreason_adlc_api.workbench.schemas import AgentArtifact, DraftResponse
 
 
 # --- Mocks ---
@@ -68,8 +70,8 @@ async def test_create_new_draft(override_dependency: None, mock_service: AsyncMo
             auc_id="p1",
             title="t",
             oas_content={},
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -93,8 +95,8 @@ async def test_get_draft(override_dependency: None, mock_service: AsyncMock) -> 
             auc_id="p1",
             title="t",
             oas_content={},
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -113,8 +115,8 @@ async def test_update_existing_draft(override_dependency: None, mock_service: As
             auc_id="p1",
             title="new",
             oas_content={},
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -134,6 +136,9 @@ async def test_heartbeat_lock(override_dependency: None, mock_service: AsyncMock
 
 @pytest.mark.asyncio
 async def test_validate_draft(override_dependency: None, mock_service: AsyncMock) -> None:
+    # Need to import ValidationResponse or use mock directly. Import added.
+    from coreason_adlc_api.workbench.schemas import ValidationResponse
+
     mock_service.validate_draft = AsyncMock(return_value=ValidationResponse(is_valid=True, issues=[]))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post("/api/v1/workbench/validate", json={"auc_id": "p1", "title": "t", "oas_content": {}})
@@ -151,8 +156,8 @@ async def test_submit_draft(override_dependency: None, mock_service: AsyncMock) 
             auc_id="p1",
             title="t",
             oas_content={},
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -171,8 +176,8 @@ async def test_approve_draft(override_dependency: None, mock_service: AsyncMock)
             auc_id="p1",
             title="t",
             oas_content={},
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -191,8 +196,8 @@ async def test_reject_draft(override_dependency: None, mock_service: AsyncMock) 
             auc_id="p1",
             title="t",
             oas_content={},
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -211,7 +216,7 @@ async def test_get_artifact_assembly(override_dependency: None, mock_service: As
             version="1.0",
             content={},
             compliance_hash="h",
-            created_at="2024-01-01T00:00:00Z",
+            created_at=datetime.now(timezone.utc),
         )
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -225,9 +230,7 @@ async def test_publish_agent_artifact(override_dependency: None, mock_service: A
     draft_id = uuid.uuid4()
     mock_service.publish_artifact = AsyncMock(return_value={"url": "http://git"})
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.post(
-            f"/api/v1/workbench/drafts/{draft_id}/publish", json={}, headers={"x-coreason-sig": "sig"}
-        )
+        resp = await ac.post(f"/api/v1/workbench/drafts/{draft_id}/publish", json={}, headers={"x-coreason-sig": "sig"})
         assert resp.status_code == 200
         assert resp.json()["url"] == "http://git"
         kwargs = mock_service.publish_artifact.call_args.kwargs

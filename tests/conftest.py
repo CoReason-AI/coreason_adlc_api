@@ -3,11 +3,12 @@ from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
-from coreason_adlc_api.config import settings
-from coreason_adlc_api.middleware.proxy import proxy_breaker
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
+
+from coreason_adlc_api.config import settings
+from coreason_adlc_api.middleware.proxy import proxy_breaker
 
 
 @pytest.fixture(autouse=True)

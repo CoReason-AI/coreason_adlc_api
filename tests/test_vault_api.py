@@ -13,10 +13,11 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from coreason_adlc_api.app import app
-from coreason_adlc_api.vault.service import retrieve_decrypted_secret, store_secret
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+
+from coreason_adlc_api.app import app
+from coreason_adlc_api.vault.service import retrieve_decrypted_secret, store_secret
 
 
 @pytest.fixture

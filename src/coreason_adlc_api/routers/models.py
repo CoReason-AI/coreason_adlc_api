@@ -10,8 +10,9 @@
 
 from typing import Any, Dict
 
-from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from fastapi import APIRouter, Depends
+
+from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 
 router = APIRouter(prefix="/models", tags=["Models"])
 

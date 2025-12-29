@@ -13,6 +13,8 @@ from typing import Generator
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
+
 from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, DraftUpdate
 from coreason_adlc_api.workbench.service import (
     create_draft,
@@ -21,7 +23,6 @@ from coreason_adlc_api.workbench.service import (
     transition_draft_status,
     update_draft,
 )
-from fastapi import HTTPException
 
 
 @pytest.fixture

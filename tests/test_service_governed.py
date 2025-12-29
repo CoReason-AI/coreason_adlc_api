@@ -9,24 +9,25 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import uuid
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
+
 from coreason_adlc_api.workbench.schemas import (
     ApprovalStatus,
     DraftCreate,
     DraftResponse,
     DraftUpdate,
     PublishRequest,
-    ValidationResponse,
 )
 from coreason_adlc_api.workbench.service_governed import WorkbenchService
-from fastapi import HTTPException
 
 
 @pytest.fixture
-def mock_pool() -> AsyncGenerator[AsyncMock, None]:
+def mock_pool() -> AsyncGenerator[AsyncMock, None]:  # type: ignore[misc]
     pool = AsyncMock()
     pool.fetchrow = AsyncMock()
     pool.fetch = AsyncMock()
@@ -88,8 +89,8 @@ async def test_get_draft_and_verify_access_success(service: WorkbenchService) ->
         auc_id="project-alpha",
         title="Test",
         oas_content={},
-        created_at="2024-01-01T00:00:00Z",
-        updated_at="2024-01-01T00:00:00Z",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
 
     with (
@@ -154,8 +155,8 @@ async def test_get_draft_success(service: WorkbenchService) -> None:
         auc_id="project-alpha",
         title="Test",
         oas_content={},
-        created_at="2024-01-01T00:00:00Z",
-        updated_at="2024-01-01T00:00:00Z",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
 
     with (
@@ -195,8 +196,8 @@ async def test_update_existing_draft(service: WorkbenchService) -> None:
         auc_id="project-alpha",
         title="Test",
         oas_content={},
-        created_at="2024-01-01T00:00:00Z",
-        updated_at="2024-01-01T00:00:00Z",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
 
     with (
@@ -351,7 +352,9 @@ async def test_get_artifact_assembly(service: WorkbenchService) -> None:
 
     with (
         patch.object(service, "_get_draft_and_verify_access", new_callable=AsyncMock),
-        patch("coreason_adlc_api.workbench.service_governed.assemble_artifact", new_callable=AsyncMock) as mock_assemble,
+        patch(
+            "coreason_adlc_api.workbench.service_governed.assemble_artifact", new_callable=AsyncMock
+        ) as mock_assemble,
     ):
         await service.get_artifact_assembly(draft_id=draft_id, user_oid=user_oid, groups=groups)
         mock_assemble.assert_awaited_once_with(draft_id, user_oid)
@@ -361,9 +364,7 @@ async def test_get_artifact_assembly(service: WorkbenchService) -> None:
 async def test_get_artifact_assembly_error(service: WorkbenchService) -> None:
     with (
         patch.object(service, "_get_draft_and_verify_access", new_callable=AsyncMock),
-        patch(
-            "coreason_adlc_api.workbench.service_governed.assemble_artifact", side_effect=ValueError("Bad draft")
-        ),
+        patch("coreason_adlc_api.workbench.service_governed.assemble_artifact", side_effect=ValueError("Bad draft")),
     ):
         with pytest.raises(HTTPException) as exc:
             await service.get_artifact_assembly(draft_id=uuid.uuid4(), user_oid=uuid.uuid4(), groups=[])

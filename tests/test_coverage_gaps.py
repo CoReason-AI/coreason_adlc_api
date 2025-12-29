@@ -12,9 +12,10 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from fastapi.testclient import TestClient
+
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
-from fastapi.testclient import TestClient
 
 # Ensure router is included (it was included in previous test file, but app state persists?
 # Usually best to include safe check or just rely on it being idempotent or already there)

@@ -11,8 +11,9 @@
 import base64
 import os
 
-from coreason_adlc_api.config import settings
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from coreason_adlc_api.config import settings
 
 
 class VaultCrypto:

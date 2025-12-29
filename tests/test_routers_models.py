@@ -11,9 +11,10 @@
 import unittest
 from unittest.mock import MagicMock
 
+from fastapi.testclient import TestClient
+
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import parse_and_validate_token
-from fastapi.testclient import TestClient
 
 
 class TestModelsRouter(unittest.TestCase):
