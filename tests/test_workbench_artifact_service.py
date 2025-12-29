@@ -7,7 +7,6 @@ from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftResponse
 from coreason_adlc_api.workbench.service import assemble_artifact, publish_artifact
 from fastapi import HTTPException
 
-
 # Service Unit Tests (Testing logic directly)
 
 
