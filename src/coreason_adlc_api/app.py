@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.DEBUG else None,
     )
 
-    @app.get("/health")  # type: ignore[misc]
+    @app.get("/health")
     async def health_check() -> dict[str, str]:
         """
         Basic health check endpoint.

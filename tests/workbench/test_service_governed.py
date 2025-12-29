@@ -20,20 +20,20 @@ from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, Dra
 from coreason_adlc_api.workbench.service_governed import WorkbenchService
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def service() -> WorkbenchService:
     return WorkbenchService()
 
 
-@pytest.fixture  # type: ignore[misc]
-def mock_db_pool() -> AsyncGenerator[AsyncMock, None]:  # type: ignore[misc]
+@pytest.fixture
+def mock_db_pool() -> AsyncGenerator[AsyncMock, None]:
     with patch("coreason_adlc_api.workbench.service_governed.get_pool") as mock_pool:
         mock_conn = AsyncMock()
         mock_pool.return_value = mock_conn
         yield mock_conn
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_derive_roles(service: WorkbenchService, mock_db_pool: AsyncMock) -> None:
     mock_db_pool.fetch.return_value = [{"role_name": "MANAGER"}]
     groups = [uuid4()]
@@ -42,7 +42,7 @@ async def test_derive_roles(service: WorkbenchService, mock_db_pool: AsyncMock) 
     mock_db_pool.fetch.assert_called_once()
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_verify_project_access_success(service: WorkbenchService) -> None:
     with patch(
         "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
@@ -51,7 +51,7 @@ async def test_verify_project_access_success(service: WorkbenchService) -> None:
         await service._verify_project_access([uuid4()], "alpha")
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_verify_project_access_fail(service: WorkbenchService) -> None:
     with patch(
         "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
@@ -62,7 +62,7 @@ async def test_verify_project_access_fail(service: WorkbenchService) -> None:
         assert exc.value.status_code == 403
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_create_draft(service: WorkbenchService) -> None:
     draft_in = DraftCreate(auc_id="alpha", title="Test", oas_content={})
     user_oid = uuid4()
@@ -88,7 +88,7 @@ async def test_create_draft(service: WorkbenchService) -> None:
         mock_create.assert_called_once_with(draft_in, user_oid)
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_publish_artifact_strict(service: WorkbenchService) -> None:
     draft_id = uuid4()
     user_oid = uuid4()
@@ -108,7 +108,7 @@ async def test_publish_artifact_strict(service: WorkbenchService) -> None:
         mock_publish.assert_called_once_with(draft_id, signature, user_oid)
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_approve_draft_manager(service: WorkbenchService) -> None:
     draft_id = uuid4()
     user_oid = uuid4()
@@ -124,7 +124,7 @@ async def test_approve_draft_manager(service: WorkbenchService) -> None:
         assert mock_transition.call_args[0][2] == ApprovalStatus.APPROVED
 
 
-@pytest.mark.asyncio  # type: ignore[misc]
+@pytest.mark.asyncio
 async def test_approve_draft_not_manager(service: WorkbenchService) -> None:
     draft_id = uuid4()
     user_oid = uuid4()

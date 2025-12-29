@@ -26,16 +26,16 @@ from coreason_adlc_api.workbench.service_governed import WorkbenchService
 router = APIRouter(prefix="/workbench", tags=["Workbench"])
 
 
-@router.get("/drafts", response_model=list[DraftResponse])  # type: ignore[misc]
+@router.get("/drafts", response_model=list[DraftResponse])
 async def list_drafts(auc_id: str, identity: UserIdentity = Depends(parse_and_validate_token)) -> list[DraftResponse]:
     """
     Returns list of drafts filterable by auc_id.
     """
     res = await WorkbenchService().list_drafts(auc_id, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
-@router.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)  # type: ignore[misc]
+@router.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_draft(
     draft: DraftCreate,
     identity: UserIdentity = Depends(parse_and_validate_token),
@@ -45,19 +45,19 @@ async def create_new_draft(
     Creates a new agent draft.
     """
     res = await WorkbenchService().create_draft(draft, identity.oid, identity.groups, signature=x_coreason_sig)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
-@router.get("/drafts/{draft_id}", response_model=DraftResponse)  # type: ignore[misc]
+@router.get("/drafts/{draft_id}", response_model=DraftResponse)
 async def get_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Returns draft content and acquires lock.
     """
     res = await WorkbenchService().get_draft(draft_id, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
-@router.put("/drafts/{draft_id}", response_model=DraftResponse)  # type: ignore[misc]
+@router.put("/drafts/{draft_id}", response_model=DraftResponse)
 async def update_existing_draft(
     draft_id: UUID, update: DraftUpdate, identity: UserIdentity = Depends(parse_and_validate_token)
 ) -> DraftResponse:
@@ -66,19 +66,19 @@ async def update_existing_draft(
     (Requires active Lock)
     """
     res = await WorkbenchService().update_draft(draft_id, update, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
-@router.post("/drafts/{draft_id}/lock")  # type: ignore[misc]
+@router.post("/drafts/{draft_id}/lock")
 async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> dict[str, bool]:
     """
     Refreshes the lock expiry.
     """
     res = await WorkbenchService().lock_draft(draft_id, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
-@router.post("/validate", response_model=ValidationResponse)  # type: ignore[misc]
+@router.post("/validate", response_model=ValidationResponse)
 async def validate_draft(
     draft: DraftCreate, identity: UserIdentity = Depends(parse_and_validate_token)
 ) -> ValidationResponse:
@@ -90,23 +90,23 @@ async def validate_draft(
     Does NOT save to DB.
     """
     res = await WorkbenchService().validate_draft(draft, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
 # --- Approval Workflow Endpoints ---
 
 
-@router.post("/drafts/{draft_id}/submit", response_model=DraftResponse)  # type: ignore[misc]
+@router.post("/drafts/{draft_id}/submit", response_model=DraftResponse)
 async def submit_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Submits a draft for approval.
     Transitions: DRAFT/REJECTED -> PENDING
     """
     res = await WorkbenchService().submit_draft(draft_id, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
-@router.post("/drafts/{draft_id}/approve", response_model=DraftResponse)  # type: ignore[misc]
+@router.post("/drafts/{draft_id}/approve", response_model=DraftResponse)
 async def approve_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Approves a pending draft.
@@ -114,10 +114,10 @@ async def approve_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_a
     Requires: MANAGER role
     """
     res = await WorkbenchService().approve_draft(draft_id, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
-@router.post("/drafts/{draft_id}/reject", response_model=DraftResponse)  # type: ignore[misc]
+@router.post("/drafts/{draft_id}/reject", response_model=DraftResponse)
 async def reject_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Rejects a pending draft.
@@ -125,13 +125,13 @@ async def reject_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_an
     Requires: MANAGER role
     """
     res = await WorkbenchService().reject_draft(draft_id, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
 # --- Artifact Assembly & Publication Endpoints ---
 
 
-@router.get("/drafts/{draft_id}/assemble", response_model=AgentArtifact)  # type: ignore[misc]
+@router.get("/drafts/{draft_id}/assemble", response_model=AgentArtifact)
 async def get_artifact_assembly(
     draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
 ) -> AgentArtifact:
@@ -139,10 +139,10 @@ async def get_artifact_assembly(
     Returns the assembled AgentArtifact for an APPROVED draft.
     """
     res = await WorkbenchService().assemble_artifact(draft_id, identity.oid, identity.groups)
-    return res  # type: ignore[no-any-return]
+    return res
 
 
-@router.post("/drafts/{draft_id}/publish", response_model=dict[str, str])  # type: ignore[misc]
+@router.post("/drafts/{draft_id}/publish", response_model=dict[str, str])
 async def publish_agent_artifact(
     draft_id: UUID,
     identity: UserIdentity = Depends(parse_and_validate_token),
@@ -155,4 +155,4 @@ async def publish_agent_artifact(
     res = await WorkbenchService().publish_artifact(
         draft_id=draft_id, signature=x_coreason_sig, user_oid=identity.oid, groups=identity.groups
     )
-    return res  # type: ignore[no-any-return]
+    return res
