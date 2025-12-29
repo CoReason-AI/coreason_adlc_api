@@ -10,6 +10,7 @@
 
 import asyncio
 import uuid
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -38,24 +39,46 @@ async def test_budget_concurrency_race() -> None:
     """
     user_id = uuid.uuid4()
     cost_per_req = 10.0
+    limit = 50.0
 
-    # We mock Redis.incrbyfloat to simulate atomic increments.
+    # We mock Redis.eval to simulate atomic execution.
     # In a real race, Redis handles this atomically.
     # Here we verify that concurrent calls to check_budget_guardrail behave as expected
-    # assuming the underlying incrbyfloat works.
+    # assuming the underlying eval works.
 
     current_spend = 0.0
 
-    def incrbyfloat_side_effect(key: str, amount: float) -> float:
+    # Lock for thread-safe updates to current_spend in the mock
+    lock = asyncio.Lock()
+
+    def eval_side_effect(script: str, numkeys: int, key: str, cost: float, limit: float, expiry: int) -> list[Any]:
         nonlocal current_spend
-        # Simulate atomic increment
-        current_spend += amount
-        return current_spend
+        # Simulate atomic script execution
+        # Note: In real Redis, this is atomic. Here we use a simple variable.
+        # Check
+        if current_spend + cost > limit:
+            return [0, current_spend, 0]
+
+        # Increment
+        current_spend += cost
+        is_new = 1 if current_spend == cost else 0
+        return [1, current_spend, is_new]
+
+    # Wrapper to handle the mock call arguments which might be positional
+    # client.eval(script, numkeys, key, arg1, arg2...)
+    def mock_eval(*args: Any, **kwargs: Any) -> list[Any]:
+        # args[0] = script
+        # args[1] = numkeys
+        # args[2] = key
+        # args[3] = cost
+        # args[4] = limit
+        # args[5] = expiry
+        return eval_side_effect(args[0], args[1], args[2], args[3], args[4], args[5])
 
     with mock.patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
         mock_redis = mock.MagicMock()
         mock_get_client.return_value = mock_redis
-        mock_redis.incrbyfloat.side_effect = incrbyfloat_side_effect
+        mock_redis.eval.side_effect = mock_eval
 
         # 6 requests of 10.0 each. Total 60.0. Limit 50.0.
         # 5 should pass, 1 should fail.
@@ -73,9 +96,7 @@ async def test_budget_concurrency_race() -> None:
         assert len(successes) == 5
         assert len(failures) == 1
 
-        # Verify final spend (should be 50.0 because the failed one is reverted)
-        # However, our simple mock doesn't handle revert logic automatically unless check_budget calls it.
-        # check_budget calls incrbyfloat(-cost) on failure.
+        # Verify final spend
         assert current_spend == 50.0
 
 
