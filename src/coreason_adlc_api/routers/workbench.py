@@ -26,7 +26,7 @@ from coreason_adlc_api.workbench.service_governed import WorkbenchService
 router = APIRouter(prefix="/workbench", tags=["Workbench"])
 
 
-@router.get("/drafts", response_model=list[DraftResponse])
+@router.get("/drafts", response_model=list[DraftResponse])  # type: ignore[misc]
 async def list_drafts(auc_id: str, identity: UserIdentity = Depends(parse_and_validate_token)) -> list[DraftResponse]:
     """
     Returns list of drafts filterable by auc_id.
@@ -36,7 +36,7 @@ async def list_drafts(auc_id: str, identity: UserIdentity = Depends(parse_and_va
     )
 
 
-@router.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)  # type: ignore[misc]
 async def create_new_draft(
     draft: DraftCreate,
     identity: UserIdentity = Depends(parse_and_validate_token),
@@ -50,7 +50,7 @@ async def create_new_draft(
     )
 
 
-@router.get("/drafts/{draft_id}", response_model=DraftResponse)
+@router.get("/drafts/{draft_id}", response_model=DraftResponse)  # type: ignore[misc]
 async def get_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Returns draft content and acquires lock.
@@ -60,7 +60,7 @@ async def get_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_v
     )
 
 
-@router.put("/drafts/{draft_id}", response_model=DraftResponse)
+@router.put("/drafts/{draft_id}", response_model=DraftResponse)  # type: ignore[misc]
 async def update_existing_draft(
     draft_id: UUID, update: DraftUpdate, identity: UserIdentity = Depends(parse_and_validate_token)
 ) -> DraftResponse:
@@ -73,7 +73,7 @@ async def update_existing_draft(
     )
 
 
-@router.post("/drafts/{draft_id}/lock")
+@router.post("/drafts/{draft_id}/lock")  # type: ignore[misc]
 async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> dict[str, bool]:
     """
     Refreshes the lock expiry.
@@ -83,7 +83,7 @@ async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_
     )
 
 
-@router.post("/validate", response_model=ValidationResponse)
+@router.post("/validate", response_model=ValidationResponse)  # type: ignore[misc]
 async def validate_draft(
     draft: DraftCreate, identity: UserIdentity = Depends(parse_and_validate_token)
 ) -> ValidationResponse:
@@ -98,7 +98,7 @@ async def validate_draft(
 # --- Approval Workflow Endpoints ---
 
 
-@router.post("/drafts/{draft_id}/submit", response_model=DraftResponse)
+@router.post("/drafts/{draft_id}/submit", response_model=DraftResponse)  # type: ignore[misc]
 async def submit_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Submits a draft for approval.
@@ -108,7 +108,7 @@ async def submit_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_an
     )
 
 
-@router.post("/drafts/{draft_id}/approve", response_model=DraftResponse)
+@router.post("/drafts/{draft_id}/approve", response_model=DraftResponse)  # type: ignore[misc]
 async def approve_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Approves a pending draft.
@@ -118,7 +118,7 @@ async def approve_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_a
     )
 
 
-@router.post("/drafts/{draft_id}/reject", response_model=DraftResponse)
+@router.post("/drafts/{draft_id}/reject", response_model=DraftResponse)  # type: ignore[misc]
 async def reject_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
     """
     Rejects a pending draft.
@@ -131,7 +131,7 @@ async def reject_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_an
 # --- Artifact Assembly & Publication Endpoints ---
 
 
-@router.get("/drafts/{draft_id}/assemble", response_model=AgentArtifact)
+@router.get("/drafts/{draft_id}/assemble", response_model=AgentArtifact)  # type: ignore[misc]
 async def get_artifact_assembly(
     draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
 ) -> AgentArtifact:
@@ -143,7 +143,7 @@ async def get_artifact_assembly(
     )
 
 
-@router.post("/drafts/{draft_id}/publish", response_model=dict[str, str])
+@router.post("/drafts/{draft_id}/publish", response_model=dict[str, str])  # type: ignore[misc]
 async def publish_agent_artifact(
     draft_id: UUID,
     identity: UserIdentity = Depends(parse_and_validate_token),

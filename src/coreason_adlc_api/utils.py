@@ -31,7 +31,7 @@ def get_redis_client() -> "redis.Redis[str]":
             decode_responses=True,
         )
     # Cast to Redis[str] because decode_responses=True in pool
-    return redis.Redis(connection_pool=_redis_pool)  # type: ignore[return-value]
+    return redis.Redis(connection_pool=_redis_pool)
 
 
 def get_http_client() -> httpx.AsyncClient:
