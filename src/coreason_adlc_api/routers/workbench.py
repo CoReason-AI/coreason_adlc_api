@@ -221,7 +221,7 @@ async def get_artifact_assembly(
     try:
         return await assemble_artifact(draft_id, identity.oid)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/drafts/{draft_id}/publish", response_model=dict[str, str])
@@ -236,4 +236,4 @@ async def publish_agent_artifact(
         url = await publish_artifact(draft_id, request.signature, identity.oid)
         return {"url": url}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e

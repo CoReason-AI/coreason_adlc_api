@@ -9,7 +9,6 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import json
-from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
 
@@ -209,7 +208,8 @@ async def assemble_artifact(draft_id: UUID, user_oid: UUID) -> AgentArtifact:
     # Use get_draft_by_id as standard accessor.
     # Note: get_draft_by_id attempts to acquire a lock.
     # If the draft is APPROVED, it's typically read-only or final, so lock might be irrelevant or we accept shared lock.
-    # Passing empty roles list as we are not checking editing rights here, just assembly rights (checked by caller via approval status?)
+    # Passing empty roles list as we are not checking editing rights here, just assembly rights
+    # (checked by caller via approval status?)
     # Actually, we rely on the draft status check.
 
     draft = await get_draft_by_id(draft_id, user_oid, [])
