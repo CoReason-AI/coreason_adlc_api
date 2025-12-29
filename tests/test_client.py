@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import jwt
+
 from coreason_adlc_api.client import CoreasonClient
 from coreason_adlc_api.client_auth import ClientAuthManager
 from coreason_adlc_api.exceptions import (

@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Assuming JSON serialization is required.
 
             # Helper adaptation based on memory:
-            # "The sink_callback in app.py acts as an adapter, mapping IERLogger attributes co.user_id to user_uuid and co.asset_id to auc_id..."
+            # "Sink callback maps user/asset IDs"
             if "co.user_id" in event:
                 event["user_uuid"] = event["co.user_id"]
             if "co.asset_id" in event:

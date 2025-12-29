@@ -15,12 +15,13 @@ from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
+
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.middleware.budget import check_budget_guardrail
 from coreason_adlc_api.middleware.telemetry import async_log_telemetry
 from coreason_adlc_api.workbench.locking import acquire_draft_lock
 from coreason_adlc_api.workbench.schemas import AccessMode
-from fastapi import HTTPException
 
 try:
     import presidio_analyzer  # noqa: F401

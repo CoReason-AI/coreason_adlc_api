@@ -11,6 +11,8 @@
 from typing import Optional
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
 from coreason_adlc_api.workbench.locking import refresh_lock
 from coreason_adlc_api.workbench.schemas import (
@@ -23,7 +25,6 @@ from coreason_adlc_api.workbench.schemas import (
     ValidationResponse,
 )
 from coreason_adlc_api.workbench.service_governed import WorkbenchService
-from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 router = APIRouter(prefix="/workbench", tags=["Workbench"])
 
@@ -51,9 +52,7 @@ async def list_drafts(
     """
     # Authorization: User must have access to auc_id
     await _verify_project_access(identity, auc_id)
-    return await WorkbenchService().list_drafts(
-        auc_id=auc_id, user_oid=identity.oid, signature=x_coreason_sig
-    )
+    return await WorkbenchService().list_drafts(auc_id=auc_id, user_oid=identity.oid, signature=x_coreason_sig)
 
 
 @router.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)
@@ -66,9 +65,7 @@ async def create_new_draft(
     Creates a new agent draft.
     """
     await _verify_project_access(identity, draft.auc_id)
-    return await WorkbenchService().create_draft(
-        draft=draft, user_oid=identity.oid, signature=x_coreason_sig
-    )
+    return await WorkbenchService().create_draft(draft=draft, user_oid=identity.oid, signature=x_coreason_sig)
 
 
 @router.get("/drafts/{draft_id}", response_model=DraftResponse)
@@ -132,16 +129,14 @@ async def update_existing_draft(
 
 
 @router.post("/drafts/{draft_id}/lock")
-async def heartbeat_lock(
-    draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
-) -> dict[str, bool]:
+async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> dict[str, bool]:
     """
     Refreshes the lock expiry.
     Note: Locking logic remains in service/locking module, not fully moved to Governed Service yet?
     The spec said "Move high-level orchestration... Apply @governed_execution to every method."
     But refresh_lock is simple.
-    The spec didn't explicitly mention `refresh_lock` in the "Step 2" list but said "every method" in `WorkbenchService`.
-    I'll assume refresh_lock is outside the main governance scope or should be left as is for now if not in `WorkbenchService`.
+    # The spec did not explicitly mention `refresh_lock`.
+    # I will assume refresh_lock is outside the main governance scope.
     Wait, I didn't add `refresh_lock` to `WorkbenchService`.
     I'll leave it calling the underlying locking module directly to minimize scope creep,
     unless strictly required. The prompt asked to move "high-level orchestration logic".
@@ -161,12 +156,11 @@ async def validate_draft(
     Stateless validation of a draft.
     """
     # Delegate completely to service
-    return await WorkbenchService().validate_draft(
-        draft=draft, user_oid=identity.oid, signature=x_coreason_sig
-    )
+    return await WorkbenchService().validate_draft(draft=draft, user_oid=identity.oid, signature=x_coreason_sig)
 
 
 # --- Approval Workflow Endpoints ---
+
 
 async def _get_draft_and_verify_access_v2(draft_id: UUID, identity: UserIdentity) -> DraftResponse:
     # Helper using new service
@@ -323,9 +317,9 @@ async def publish_agent_artifact(
 
     # Ensure we have a string
     if not final_sig:
-         # Should we raise 400? The service governed with allow_unsigned=False will likely raise if missing/invalid.
-         # But let's pass what we have.
-         final_sig = "" # type: ignore
+        # Should we raise 400? The service governed with allow_unsigned=False will likely raise if missing/invalid.
+        # But let's pass what we have.
+        final_sig = ""  # type: ignore
 
     try:
         return await WorkbenchService().publish_artifact(

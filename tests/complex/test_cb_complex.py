@@ -12,6 +12,7 @@ import asyncio
 import time
 
 import pytest
+
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 
 

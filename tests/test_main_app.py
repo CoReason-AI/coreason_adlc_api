@@ -12,6 +12,7 @@ import sys
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from coreason_adlc_api.app import create_app, lifespan
 from coreason_adlc_api.main import main
 

@@ -4,9 +4,10 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
+
 from coreason_adlc_api.app import app
 from coreason_adlc_api.workbench.schemas import AgentArtifact, ApprovalStatus, DraftResponse
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture

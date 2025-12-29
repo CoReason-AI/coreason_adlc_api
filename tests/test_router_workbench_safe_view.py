@@ -14,11 +14,11 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from coreason_adlc_api.app import app
-from coreason_adlc_api.routers import workbench
 from coreason_adlc_api.workbench.locking import AccessMode
 from coreason_adlc_api.workbench.schemas import DraftResponse
-from httpx import ASGITransport, AsyncClient
 
 
 # Helper to generate tokens with specific claims (roles)
@@ -105,7 +105,9 @@ async def test_get_draft_locked_access_denied(mock_oidc_factory: Any) -> None:
         mock_service_instance = MockServiceCls.return_value
         # If the service (underlying) raises 423, the governed service usually propagates it
         # unless it catches it. Assuming propagation.
-        mock_service_instance.get_draft = AsyncMock(side_effect=HTTPException(status_code=423, detail="Locked by User A"))
+        mock_service_instance.get_draft = AsyncMock(
+            side_effect=HTTPException(status_code=423, detail="Locked by User A")
+        )
 
         token = generate_token(mock_oidc_factory, developer_uuid, [])
 

@@ -13,8 +13,9 @@ import os
 from unittest.mock import patch
 
 import pytest
-from coreason_adlc_api.app import app
 from httpx import ASGITransport, AsyncClient
+
+from coreason_adlc_api.app import app
 
 
 @pytest.mark.asyncio

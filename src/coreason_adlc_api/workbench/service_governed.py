@@ -16,22 +16,20 @@ from coreason_adlc_api.workbench.schemas import (
 
 
 class WorkbenchService:
-    @governed_execution(  # type: ignore[misc]
+    @governed_execution(
         asset_id_arg="draft",
         signature_arg="signature",
         user_id_arg="user_oid",
         allow_unsigned=True,
     )
-    async def create_draft(
-        self, draft: DraftCreate, user_oid: UUID, signature: str | None = None
-    ) -> DraftResponse:
+    async def create_draft(self, draft: DraftCreate, user_oid: UUID, signature: str | None = None) -> DraftResponse:
         """
         Creates a new agent draft.
         Draft creation allows unsigned requests (Draft Mode).
         """
         return await service.create_draft(draft=draft, user_uuid=user_oid)
 
-    @governed_execution(  # type: ignore[misc]
+    @governed_execution(
         asset_id_arg="draft_id",
         signature_arg="signature",
         user_id_arg="user_oid",
@@ -48,29 +46,25 @@ class WorkbenchService:
         Publishes the signed artifact.
         Strict Mode: Requires a valid signature.
         """
-        url = await service.publish_artifact(
-            draft_id=draft_id, signature=signature, user_oid=user_oid
-        )
+        url = await service.publish_artifact(draft_id=draft_id, signature=signature, user_oid=user_oid)
         return {"url": url}
 
     # --- New Methods ---
 
-    @governed_execution(  # type: ignore[misc]
+    @governed_execution(
         asset_id_arg="auc_id",
         signature_arg="signature",
         user_id_arg="user_oid",
         allow_unsigned=True,
     )
-    async def list_drafts(
-        self, auc_id: str, user_oid: UUID, signature: str | None = None
-    ) -> List[DraftResponse]:
+    async def list_drafts(self, auc_id: str, user_oid: UUID, signature: str | None = None) -> List[DraftResponse]:
         """
         Lists drafts for a project.
         Read-only, allows unsigned.
         """
         return await service.get_drafts(auc_id=auc_id)
 
-    @governed_execution(  # type: ignore[misc]
+    @governed_execution(
         asset_id_arg="draft_id",
         signature_arg="signature",
         user_id_arg="user_oid",
@@ -108,7 +102,7 @@ class WorkbenchService:
         roles = await self._get_user_roles(groups)
         return await service.get_draft_by_id(draft_id=draft_id, user_uuid=user_oid, roles=roles)
 
-    @governed_execution(  # type: ignore[misc]
+    @governed_execution(
         asset_id_arg="draft_id",
         signature_arg="signature",
         user_id_arg="user_oid",
@@ -122,7 +116,7 @@ class WorkbenchService:
         """
         return await service.update_draft(draft_id=draft_id, update=update, user_uuid=user_oid)
 
-    @governed_execution(  # type: ignore[misc]
+    @governed_execution(
         asset_id_arg="draft",
         signature_arg="signature",
         user_id_arg="user_oid",
@@ -149,11 +143,11 @@ class WorkbenchService:
             if scrubbed_content != draft.oas_content:
                 issues.append("PII Detected")
         except Exception:
-             issues.append("PII Check Failed")
+            issues.append("PII Check Failed")
 
         return ValidationResponse(is_valid=(len(issues) == 0), issues=issues)
 
-    @governed_execution(  # type: ignore[misc]
+    @governed_execution(
         asset_id_arg="draft_id",
         signature_arg="signature",
         user_id_arg="user_oid",
@@ -165,7 +159,7 @@ class WorkbenchService:
         user_oid: UUID,
         groups: List[UUID],
         new_status: ApprovalStatus,
-        signature: str | None = None
+        signature: str | None = None,
     ) -> DraftResponse:
         """
         Transitions draft status (Submit, Approve, Reject).
@@ -173,24 +167,25 @@ class WorkbenchService:
         """
         # Permission Check
         if new_status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
-             roles = await self._get_user_roles(groups)
-             if "MANAGER" not in roles:
-                 # We need to raise the same exception or similar
-                 from fastapi import HTTPException, status
-                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only managers can approve/reject drafts")
+            roles = await self._get_user_roles(groups)
+            if "MANAGER" not in roles:
+                # We need to raise the same exception or similar
+                from fastapi import HTTPException, status
+
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Only managers can approve/reject drafts"
+                )
 
         return await service.transition_draft_status(draft_id=draft_id, user_uuid=user_oid, new_status=new_status)
 
-    @governed_execution(  # type: ignore[misc]
+    @governed_execution(
         asset_id_arg="draft_id",
         signature_arg="signature",
         user_id_arg="user_oid",
         allow_unsigned=True,  # Assembly might be allowed unsigned if it's just generating the artifact?
-                              # Spec says Publish is strict. Assemble is read-ish. Let's keep strictness low for now unless specified.
+        # Spec says Publish is strict. Assemble is read-ish. Let's keep strictness low for now unless specified.
     )
-    async def assemble_artifact(
-        self, draft_id: UUID, user_oid: UUID, signature: str | None = None
-    ) -> AgentArtifact:
+    async def assemble_artifact(self, draft_id: UUID, user_oid: UUID, signature: str | None = None) -> AgentArtifact:
         return await service.assemble_artifact(draft_id=draft_id, user_oid=user_oid)
 
     async def _get_user_roles(self, group_oids: List[UUID]) -> List[str]:
@@ -198,6 +193,7 @@ class WorkbenchService:
         Helper to fetch roles. Duplicated from Router logic but placed here for Service-Centricity.
         """
         from coreason_adlc_api.db import get_pool
+
         pool = get_pool()
         query = "SELECT role_name FROM identity.group_mappings WHERE sso_group_oid = ANY($1::uuid[])"
         rows = await pool.fetch(query, group_oids)
