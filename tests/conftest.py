@@ -7,12 +7,15 @@ try:
     import coreason_veritas  # noqa
 except ImportError:
     mock_veritas = MagicMock()
+
     # Mock governed_execution to be a passthrough decorator
     def governed_execution(user_id_arg: str | None = None, allow_unsigned: bool = False) -> Any:
         def decorator(func: Any) -> Any:
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 return await func(*args, **kwargs)
+
             return wrapper
+
         return decorator
 
     # Mock IERLogger

@@ -220,9 +220,7 @@ async def test_update_draft_success(service: WorkbenchService, user_oid: uuid.UU
             "coreason_adlc_api.workbench.service_governed.update_draft", new=AsyncMock(return_value=mock_draft)
         ) as mock_update,
     ):
-        await service.update_draft(
-            draft_id=draft_id, update=DraftUpdate(), user_oid=user_oid, groups=[group_oid]
-        )
+        await service.update_draft(draft_id=draft_id, update=DraftUpdate(), user_oid=user_oid, groups=[group_oid])
         mock_update.assert_called_once()
 
 
@@ -238,9 +236,7 @@ async def test_validate_draft_pii(service: WorkbenchService, user_oid: uuid.UUID
     # Mock budget and pii
     with (
         patch("coreason_adlc_api.workbench.service_governed.check_budget_status", return_value=True),
-        patch(
-            "coreason_adlc_api.workbench.service_governed.scrub_pii_recursive", return_value={"scrubbed": True}
-        ),
+        patch("coreason_adlc_api.workbench.service_governed.scrub_pii_recursive", return_value={"scrubbed": True}),
     ):
         draft = DraftCreate(auc_id="auc-123", title="T", oas_content={"pii": "secret"})
         resp = await service.validate_draft(draft=draft, user_oid=user_oid, groups=[group_oid])
@@ -253,9 +249,7 @@ async def test_validate_draft_pii(service: WorkbenchService, user_oid: uuid.UUID
 async def test_validate_draft_budget(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with (
         patch("coreason_adlc_api.workbench.service_governed.check_budget_status", return_value=False),
-        patch(
-            "coreason_adlc_api.workbench.service_governed.scrub_pii_recursive", return_value={}
-        ),
+        patch("coreason_adlc_api.workbench.service_governed.scrub_pii_recursive", return_value={}),
     ):
         draft = DraftCreate(auc_id="auc-123", title="T", oas_content={})
         resp = await service.validate_draft(draft=draft, user_oid=user_oid, groups=[group_oid])
@@ -410,9 +404,7 @@ async def test_get_artifact_assembly_value_error(
             "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["auc-123"]),
         ),
-        patch(
-            "coreason_adlc_api.workbench.service_governed.assemble_artifact", side_effect=ValueError("Not approved")
-        ),
+        patch("coreason_adlc_api.workbench.service_governed.assemble_artifact", side_effect=ValueError("Not approved")),
     ):
         with pytest.raises(HTTPException) as exc:
             await service.get_artifact_assembly(draft_id=draft_id, user_oid=user_oid, groups=[group_oid])
@@ -423,9 +415,7 @@ async def test_get_artifact_assembly_value_error(
 async def test_publish_artifact_not_found(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
-            await service.publish_artifact(
-                draft_id=uuid.uuid4(), user_oid=user_oid, groups=[group_oid], signature="s"
-            )
+            await service.publish_artifact(draft_id=uuid.uuid4(), user_oid=user_oid, groups=[group_oid], signature="s")
         assert exc.value.status_code == 404
 
 
@@ -450,12 +440,8 @@ async def test_publish_artifact_value_error(
             "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["auc-123"]),
         ),
-        patch(
-            "coreason_adlc_api.workbench.service_governed.publish_artifact", side_effect=ValueError("Failed")
-        ),
+        patch("coreason_adlc_api.workbench.service_governed.publish_artifact", side_effect=ValueError("Failed")),
     ):
         with pytest.raises(HTTPException) as exc:
-            await service.publish_artifact(
-                draft_id=draft_id, user_oid=user_oid, groups=[group_oid], signature="s"
-            )
+            await service.publish_artifact(draft_id=draft_id, user_oid=user_oid, groups=[group_oid], signature="s")
         assert exc.value.status_code == 400

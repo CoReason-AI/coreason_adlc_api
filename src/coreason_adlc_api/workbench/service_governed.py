@@ -64,9 +64,7 @@ class WorkbenchService:
             )
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def list_drafts(
-        self, auc_id: str, user_oid: UUID, groups: list[UUID]
-    ) -> list[DraftResponse]:
+    async def list_drafts(self, auc_id: str, user_oid: UUID, groups: list[UUID]) -> list[DraftResponse]:
         """
         Returns list of drafts filterable by auc_id.
         """
@@ -84,9 +82,7 @@ class WorkbenchService:
         return await create_draft(draft, user_oid)
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def get_draft(
-        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
-    ) -> DraftResponse:
+    async def get_draft(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> DraftResponse:
         """
         Returns draft content and acquires lock.
         """
@@ -117,9 +113,7 @@ class WorkbenchService:
         return await update_draft(draft_id, update, user_oid)
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def heartbeat_lock(
-        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
-    ) -> dict[str, bool]:
+    async def heartbeat_lock(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> dict[str, bool]:
         """
         Refreshes the lock expiry.
         """
@@ -137,9 +131,7 @@ class WorkbenchService:
         return {"success": True}
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def validate_draft(
-        self, draft: DraftCreate, user_oid: UUID, groups: list[UUID]
-    ) -> ValidationResponse:
+    async def validate_draft(self, draft: DraftCreate, user_oid: UUID, groups: list[UUID]) -> ValidationResponse:
         """
         Stateless validation of a draft.
         """
@@ -168,9 +160,7 @@ class WorkbenchService:
         return ValidationResponse(is_valid=(len(issues) == 0), issues=issues)
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def submit_draft(
-        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
-    ) -> DraftResponse:
+    async def submit_draft(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> DraftResponse:
         """
         Submits a draft for approval.
         """
@@ -181,9 +171,7 @@ class WorkbenchService:
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.PENDING)
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def approve_draft(
-        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
-    ) -> DraftResponse:
+    async def approve_draft(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> DraftResponse:
         """
         Approves a pending draft.
         """
@@ -198,9 +186,7 @@ class WorkbenchService:
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.APPROVED)
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def reject_draft(
-        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
-    ) -> DraftResponse:
+    async def reject_draft(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> DraftResponse:
         """
         Rejects a pending draft.
         """
@@ -215,9 +201,7 @@ class WorkbenchService:
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.REJECTED)
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def get_artifact_assembly(
-        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
-    ) -> AgentArtifact:
+    async def get_artifact_assembly(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> AgentArtifact:
         """
         Returns the assembled AgentArtifact for an APPROVED draft.
         """
@@ -232,9 +216,7 @@ class WorkbenchService:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
     @governed_execution(user_id_arg="user_oid", allow_unsigned=False)  # type: ignore[misc]
-    async def publish_artifact(
-        self, draft_id: UUID, user_oid: UUID, groups: list[UUID], signature: str
-    ) -> str:
+    async def publish_artifact(self, draft_id: UUID, user_oid: UUID, groups: list[UUID], signature: str) -> str:
         """
         Publishes the signed artifact.
         """
