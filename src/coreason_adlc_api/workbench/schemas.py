@@ -71,7 +71,3 @@ class AgentArtifact(BaseModel):
     compliance_hash: str
     author_signature: str | None = None
     created_at: datetime
-
-
-class PublishRequest(BaseModel):
-    signature: str

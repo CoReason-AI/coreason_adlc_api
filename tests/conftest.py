@@ -1,5 +1,32 @@
+import sys
 from typing import Any, Callable, Generator, cast
 from unittest.mock import MagicMock, patch
+
+# Mock coreason-veritas for testing environments where it's not installed
+try:
+    import coreason_veritas  # noqa
+except ImportError:
+    mock_veritas = MagicMock()
+    # Mock governed_execution to be a passthrough decorator
+    def governed_execution(user_id_arg=None, allow_unsigned=False):
+        def decorator(func):
+            async def wrapper(*args, **kwargs):
+                return await func(*args, **kwargs)
+            return wrapper
+        return decorator
+
+    # Mock IERLogger
+    class MockIERLogger:
+        def register_sink(self, callback):
+            pass
+
+    mock_veritas.governance.governed_execution = governed_execution
+    mock_veritas.auditor.IERLogger = MockIERLogger
+
+    sys.modules["coreason_veritas"] = mock_veritas
+    sys.modules["coreason_veritas.governance"] = mock_veritas.governance
+    sys.modules["coreason_veritas.auditor"] = mock_veritas.auditor
+
 
 import jwt
 import pytest

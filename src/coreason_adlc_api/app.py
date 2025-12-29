@@ -19,6 +19,8 @@ from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
 from coreason_adlc_api.telemetry.worker import telemetry_worker
+from coreason_adlc_api.utils import get_redis_client
+from coreason_veritas.auditor import IERLogger  # type: ignore[import]
 
 
 @asynccontextmanager
@@ -34,6 +36,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Start Telemetry Worker
     telemetry_task = asyncio.create_task(telemetry_worker())
+
+    # Wire up Audit Sink
+    async def sink_callback(event: dict) -> None:
+        redis = get_redis_client()
+        # Transform event to match telemetry_worker schema
+        telemetry_event = {
+            "user_uuid": event.get("attributes", {}).get("co.user_id"),
+            "auc_id": event.get("attributes", {}).get("co.asset_id"),
+            "model_name": event.get("span_name"),
+            "timestamp": event.get("timestamp"),
+            # Ensure required fields for worker if any others are needed,
+            # but based on prompt these are the mappings.
+            # We might want to include the full raw event or attributes as well?
+            # Prompt says: "If keys are missing, provide safe defaults so the worker doesn't crash."
+            "attributes": event.get("attributes", {}),
+        }
+        # Provide defaults
+        if not telemetry_event["user_uuid"]:
+            telemetry_event["user_uuid"] = "00000000-0000-0000-0000-000000000000"  # System/Unknown
+        if not telemetry_event["auc_id"]:
+            telemetry_event["auc_id"] = "unknown"
+        if not telemetry_event["model_name"]:
+            telemetry_event["model_name"] = "unknown_action"
+
+        # Push to Redis queue
+        await redis.rpush("telemetry_queue", str(telemetry_event))
+
+    IERLogger().register_sink(sink_callback)
 
     # Enterprise License Check (BC-03)
     if settings.ENTERPRISE_LICENSE_KEY:
