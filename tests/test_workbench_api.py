@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from coreason_adlc_api.app import app
-from coreason_adlc_api.routers.workbench import _get_user_roles
 from coreason_adlc_api.workbench.schemas import DraftResponse
 from httpx import ASGITransport, AsyncClient
 
@@ -48,10 +47,10 @@ async def test_create_draft(mock_auth_header: str) -> None:
 
     with (
         patch(
-            "coreason_adlc_api.routers.workbench.create_draft", new=AsyncMock(return_value=mock_response)
+            "coreason_adlc_api.workbench.service_governed.create_draft", new=AsyncMock(return_value=mock_response)
         ) as mock_create,
         patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["project-alpha"]),
         ),
     ):
@@ -80,9 +79,9 @@ async def test_list_drafts(mock_auth_header: str) -> None:
     ]
 
     with (
-        patch("coreason_adlc_api.routers.workbench.get_drafts", new=AsyncMock(return_value=mock_list)),
+        patch("coreason_adlc_api.workbench.service_governed.get_drafts", new=AsyncMock(return_value=mock_list)),
         patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["project-alpha"]),
         ),
     ):
@@ -110,12 +109,15 @@ async def test_get_draft_by_id(mock_auth_header: str) -> None:
     )
 
     with (
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
         patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["project-alpha"]),
         ),
-        patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock(return_value=[])),
+        patch(
+            "coreason_adlc_api.workbench.service_governed.WorkbenchService._get_user_roles",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(f"/api/v1/workbench/drafts/{draft_id}", headers={"Authorization": mock_auth_header})
@@ -126,8 +128,11 @@ async def test_get_draft_by_id(mock_auth_header: str) -> None:
 @pytest.mark.asyncio
 async def test_get_draft_not_found(mock_auth_header: str) -> None:
     with (
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=None)),
-        patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock(return_value=[])),
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)),
+        patch(
+            "coreason_adlc_api.workbench.service_governed.WorkbenchService._get_user_roles",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(f"/api/v1/workbench/drafts/{uuid.uuid4()}", headers={"Authorization": mock_auth_header})
@@ -148,10 +153,10 @@ async def test_update_draft(mock_auth_header: str) -> None:
     )
 
     with (
-        patch("coreason_adlc_api.routers.workbench.update_draft", new=AsyncMock(return_value=mock_resp)),
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
+        patch("coreason_adlc_api.workbench.service_governed.update_draft", new=AsyncMock(return_value=mock_resp)),
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
         patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["project-alpha"]),
         ),
     ):
@@ -169,7 +174,7 @@ async def test_update_draft(mock_auth_header: str) -> None:
 async def test_heartbeat_lock_api(mock_auth_header: str) -> None:
     draft_id = uuid.uuid4()
 
-    with patch("coreason_adlc_api.routers.workbench.refresh_lock", new=AsyncMock()) as mock_refresh:
+    with patch("coreason_adlc_api.workbench.service_governed.refresh_lock", new=AsyncMock()) as mock_refresh:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post(
                 f"/api/v1/workbench/drafts/{draft_id}/lock", headers={"Authorization": mock_auth_header}
@@ -186,17 +191,6 @@ async def test_manager_cannot_update_locked_draft(mock_auth_header: str) -> None
     they cannot perform updates (PUT) because they do not hold the lock.
     """
     draft_id = uuid.uuid4()
-
-    # Mock update_draft to raise 423 (Locked) which is what verify_lock_for_update would do
-    # In integration, verify_lock_for_update raises the error.
-    # Here we mock update_draft which contains the verify logic call
-    # But wait, update_draft calls verify_lock_for_update.
-    # Ideally we should mock verify_lock_for_update to raise exception?
-    # Or let it run if we can mock DB state?
-    # test_workbench_api mocks `coreason_adlc_api.routers.workbench.update_draft`.
-    # So the router just calls the mock.
-    # To test the router's behavior on exception, we should make the mock raise.
-
     from fastapi import HTTPException
 
     mock_resp = DraftResponse(
@@ -211,12 +205,12 @@ async def test_manager_cannot_update_locked_draft(mock_auth_header: str) -> None
 
     with (
         patch(
-            "coreason_adlc_api.routers.workbench.update_draft",
+            "coreason_adlc_api.workbench.service_governed.update_draft",
             side_effect=HTTPException(status_code=423, detail="Locked"),
         ),
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
         patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["project-alpha"]),
         ),
     ):
@@ -232,7 +226,7 @@ async def test_manager_cannot_update_locked_draft(mock_auth_header: str) -> None
 
 @pytest.mark.asyncio
 async def test_update_draft_not_found_router(mock_auth_header: str) -> None:
-    with patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=None)):
+    with patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.put(
                 f"/api/v1/workbench/drafts/{uuid.uuid4()}",
@@ -243,19 +237,11 @@ async def test_update_draft_not_found_router(mock_auth_header: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_user_roles_helper() -> None:
-    mock_pool = AsyncMock()
-    mock_pool.fetch.return_value = [{"role_name": "MANAGER"}]
-    with patch("coreason_adlc_api.routers.workbench.get_pool", return_value=mock_pool):
-        roles = await _get_user_roles([uuid.uuid4()])
-        assert roles == ["MANAGER"]
-
-
-@pytest.mark.asyncio
 async def test_list_drafts_forbidden(mock_auth_header: str) -> None:
     """Test GET /workbench/drafts - Forbidden."""
     with patch(
-        "coreason_adlc_api.routers.workbench.map_groups_to_projects", new=AsyncMock(return_value=["other-project"])
+        "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
+        new=AsyncMock(return_value=["other-project"]),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(
