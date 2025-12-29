@@ -37,7 +37,7 @@ class WorkbenchService:
                 detail=f"User is not authorized to access project {auc_id}",
             )
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="auc_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def list_drafts(
@@ -46,7 +46,7 @@ class WorkbenchService:
         await self._verify_project_access(groups, auc_id)
         return await service.get_drafts(auc_id)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def create_draft(
@@ -55,7 +55,7 @@ class WorkbenchService:
         await self._verify_project_access(groups, draft.auc_id)
         return await service.create_draft(draft, user_oid)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def get_draft(
@@ -68,7 +68,7 @@ class WorkbenchService:
         await self._verify_project_access(groups, draft.auc_id)
         return draft
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def update_draft(
@@ -85,7 +85,7 @@ class WorkbenchService:
         await self._verify_project_access(groups, current_draft.auc_id)
         return await service.update_draft(draft_id, update, user_oid)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def lock_draft(
@@ -94,7 +94,7 @@ class WorkbenchService:
         await refresh_lock(draft_id, user_oid)
         return {"success": True}
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def validate_draft(
@@ -122,7 +122,7 @@ class WorkbenchService:
         await self._verify_project_access(groups, draft.auc_id)
         return draft
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def submit_draft(
@@ -131,7 +131,7 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, user_oid, groups)
         return await service.transition_draft_status(draft_id, user_oid, schemas.ApprovalStatus.PENDING)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def approve_draft(
@@ -143,7 +143,7 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, user_oid, groups)
         return await service.transition_draft_status(draft_id, user_oid, schemas.ApprovalStatus.APPROVED)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def reject_draft(
@@ -155,7 +155,7 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, user_oid, groups)
         return await service.transition_draft_status(draft_id, user_oid, schemas.ApprovalStatus.REJECTED)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=True
     )
     async def assemble_artifact(
@@ -167,7 +167,7 @@ class WorkbenchService:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature", allow_unsigned=False
     )
     async def publish_artifact(

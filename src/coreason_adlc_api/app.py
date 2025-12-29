@@ -11,7 +11,7 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from coreason_veritas.auditor import IERLogger
 from fastapi import FastAPI
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
 
     # Wire Audit Sink (BC-02)
-    def sink_callback(event: dict) -> None:
+    def sink_callback(event: dict[str, Any]) -> None:
         try:
             redis_client = get_redis_client()
             attributes = event.get("attributes", {})
@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.DEBUG else None,
     )
 
-    @app.get("/health")
+    @app.get("/health")  # type: ignore[misc]
     async def health_check() -> dict[str, str]:
         """
         Basic health check endpoint.
