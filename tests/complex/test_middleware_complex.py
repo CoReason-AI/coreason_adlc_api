@@ -39,7 +39,7 @@ async def test_budget_concurrency_race() -> None:
     """
     user_id = uuid.uuid4()
     cost_per_req = 10.0
-    limit = 50.0
+    # limit = 50.0
 
     # We mock Redis.eval to simulate atomic execution.
     # In a real race, Redis handles this atomically.
@@ -49,7 +49,7 @@ async def test_budget_concurrency_race() -> None:
     current_spend = 0.0
 
     # Lock for thread-safe updates to current_spend in the mock
-    lock = asyncio.Lock()
+    # lock = asyncio.Lock()
 
     def eval_side_effect(script: str, numkeys: int, key: str, cost: float, limit: float, expiry: int) -> list[Any]:
         nonlocal current_spend

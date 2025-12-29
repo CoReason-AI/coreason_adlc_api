@@ -149,7 +149,7 @@ async def test_fr_api_003_pessimistic_locking(mock_db_pool: MagicMock) -> None:
 
     conn = mock_db_pool.acquire.return_value.__aenter__.return_value
 
-    from datetime import datetime, timedelta, timezone
+    from datetime import timedelta, timezone
 
     now = datetime.now(timezone.utc)
     future = now + timedelta(seconds=30)
@@ -174,7 +174,7 @@ async def test_fr_api_004_safe_view_override(mock_db_pool: MagicMock) -> None:
 
     conn = mock_db_pool.acquire.return_value.__aenter__.return_value
 
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     future = datetime.now(timezone.utc) + timedelta(seconds=30)
 

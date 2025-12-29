@@ -18,7 +18,6 @@ from loguru import logger
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.utils import get_redis_client
 
-
 # Atomic check-and-update script
 # Keys: [budget_key]
 # Args: [cost, limit, expiry_seconds]
@@ -87,7 +86,7 @@ def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
 
         # Redis might return ints as ints, floats as strings or floats depending on client version/decoding.
         is_allowed = int(result[0])
-        new_balance = float(result[1])
+        _new_balance = float(result[1])
 
         if not is_allowed:
             logger.warning(

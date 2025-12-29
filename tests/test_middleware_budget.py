@@ -45,7 +45,7 @@ def test_check_budget_pass(mock_redis: Any) -> None:
     # args[0] is script, args[1] is numkeys (1), args[2] is key
     assert "local key = KEYS[1]" in args[0]
     assert args[1] == 1
-    assert f"budget:" in args[2]
+    assert "budget:" in args[2]
     assert str(user_id) in args[2]
 
 
@@ -89,7 +89,7 @@ def test_check_budget_first_time(mock_redis: Any) -> None:
 
     user_id = uuid.uuid4()
     cost = 5.0
-    mock_redis.eval.return_value = [1, 5.0, 1] # is_new=1
+    mock_redis.eval.return_value = [1, 5.0, 1]  # is_new=1
 
     result = check_budget_guardrail(user_id, cost)
     assert result is True

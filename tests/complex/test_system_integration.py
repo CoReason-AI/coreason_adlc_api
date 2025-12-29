@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import asyncio
 from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
