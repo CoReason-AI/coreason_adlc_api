@@ -9,9 +9,11 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
+from coreason_veritas.auditor import IERLogger
 from fastapi import FastAPI
 from loguru import logger
 
@@ -20,8 +22,6 @@ from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
 from coreason_adlc_api.telemetry.worker import telemetry_worker
 from coreason_adlc_api.utils import get_redis_client
-from coreason_veritas.auditor import IERLogger
-import json
 
 
 @asynccontextmanager
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
 
     # Wire up Audit Sink
-    def sink_callback(event: dict) -> None:
+    def sink_callback(event: dict[str, Any]) -> None:
         """
         Adapts IERLogger event to Telemetry Worker schema and pushes to Redis.
         """
@@ -45,10 +45,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "user_uuid": str(attributes.get("co.user_id", "")),
             "auc_id": str(attributes.get("co.asset_id", "")),
             "model_name": event.get("span_name", "unknown"),
-            "request_payload": attributes.get("co.request", {}), # Best effort mapping
-            "response_payload": attributes.get("co.response", {}), # Best effort mapping
-            "cost_usd": 0.0, # Default, as governance might not track cost directly yet
-            "latency_ms": 0, # Default
+            "request_payload": attributes.get("co.request", {}),  # Best effort mapping
+            "response_payload": attributes.get("co.response", {}),  # Best effort mapping
+            "cost_usd": 0.0,  # Default, as governance might not track cost directly yet
+            "latency_ms": 0,  # Default
             "timestamp": event.get("timestamp"),
         }
 

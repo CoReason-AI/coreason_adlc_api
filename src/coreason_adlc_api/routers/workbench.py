@@ -35,7 +35,7 @@ async def list_drafts(
     """
     Returns list of drafts filterable by auc_id.
     """
-    return await WorkbenchService().list_drafts(
+    return await WorkbenchService().list_drafts(  # type: ignore[no-any-return]
         auc_id=auc_id, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -49,7 +49,7 @@ async def create_new_draft(
     """
     Creates a new agent draft.
     """
-    return await WorkbenchService().create_new_draft(
+    return await WorkbenchService().create_new_draft(  # type: ignore[no-any-return]
         draft=draft, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -63,7 +63,7 @@ async def get_draft(
     """
     Returns draft content and acquires lock.
     """
-    return await WorkbenchService().get_draft(
+    return await WorkbenchService().get_draft(  # type: ignore[no-any-return]
         draft_id=draft_id, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -79,7 +79,7 @@ async def update_existing_draft(
     Updates draft content.
     (Requires active Lock)
     """
-    return await WorkbenchService().update_existing_draft(
+    return await WorkbenchService().update_existing_draft(  # type: ignore[no-any-return]
         draft_id=draft_id, update=update, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -93,7 +93,7 @@ async def heartbeat_lock(
     """
     Refreshes the lock expiry.
     """
-    return await WorkbenchService().heartbeat_lock(
+    return await WorkbenchService().heartbeat_lock(  # type: ignore[no-any-return]
         draft_id=draft_id, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -107,7 +107,7 @@ async def validate_draft(
     """
     Stateless validation of a draft.
     """
-    return await WorkbenchService().validate_draft(
+    return await WorkbenchService().validate_draft(  # type: ignore[no-any-return]
         draft=draft, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -125,7 +125,7 @@ async def submit_draft(
     Submits a draft for approval.
     Transitions: DRAFT/REJECTED -> PENDING
     """
-    return await WorkbenchService().submit_draft(
+    return await WorkbenchService().submit_draft(  # type: ignore[no-any-return]
         draft_id=draft_id, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -141,7 +141,7 @@ async def approve_draft(
     Transitions: PENDING -> APPROVED
     Requires: MANAGER role
     """
-    return await WorkbenchService().approve_draft(
+    return await WorkbenchService().approve_draft(  # type: ignore[no-any-return]
         draft_id=draft_id, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -157,7 +157,7 @@ async def reject_draft(
     Transitions: PENDING -> REJECTED
     Requires: MANAGER role
     """
-    return await WorkbenchService().reject_draft(
+    return await WorkbenchService().reject_draft(  # type: ignore[no-any-return]
         draft_id=draft_id, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -174,7 +174,7 @@ async def get_artifact_assembly(
     """
     Returns the assembled AgentArtifact for an APPROVED draft.
     """
-    return await WorkbenchService().get_artifact_assembly(
+    return await WorkbenchService().get_artifact_assembly(  # type: ignore[no-any-return]
         draft_id=draft_id, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -189,7 +189,7 @@ async def publish_agent_artifact(
     """
     Publishes the signed artifact.
     """
-    return await WorkbenchService().publish_artifact(
+    return await WorkbenchService().publish_artifact(  # type: ignore[no-any-return]
         draft_id=draft_id,
         request=request,
         signature=x_coreason_sig,

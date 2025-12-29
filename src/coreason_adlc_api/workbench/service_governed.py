@@ -8,13 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+from typing import List, Optional
 from uuid import UUID
-from typing import List, Optional, cast
-
-from fastapi import HTTPException, status
-from loguru import logger
-
-from coreason_veritas import governed_execution
 
 from coreason_adlc_api.auth.identity import map_groups_to_projects
 from coreason_adlc_api.db import get_pool
@@ -35,10 +30,14 @@ from coreason_adlc_api.workbench.service import (
     create_draft,
     get_draft_by_id,
     get_drafts,
-    publish_artifact as service_publish_artifact,
     transition_draft_status,
     update_draft,
 )
+from coreason_adlc_api.workbench.service import (
+    publish_artifact as service_publish_artifact,
+)
+from coreason_veritas import governed_execution
+from fastapi import HTTPException, status
 
 
 class WorkbenchService:
@@ -71,7 +70,9 @@ class WorkbenchService:
         await self._verify_project_access(groups, draft.auc_id)
         return draft
 
-    @governed_execution(asset_id_arg="auc_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="auc_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def list_drafts(
         self, auc_id: str, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> List[DraftResponse]:
@@ -82,7 +83,9 @@ class WorkbenchService:
         result = await get_drafts(auc_id)
         return result
 
-    @governed_execution(asset_id_arg="draft", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def create_new_draft(
         self, draft: DraftCreate, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> DraftResponse:
@@ -92,7 +95,9 @@ class WorkbenchService:
         await self._verify_project_access(groups, draft.auc_id)
         return await create_draft(draft, user_oid)
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def get_draft(
         self, draft_id: UUID, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> DraftResponse:
@@ -109,9 +114,16 @@ class WorkbenchService:
 
         return draft
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def update_existing_draft(
-        self, draft_id: UUID, update: DraftUpdate, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
+        self,
+        draft_id: UUID,
+        update: DraftUpdate,
+        user_oid: UUID,
+        groups: List[UUID],
+        signature: Optional[str] = None,
     ) -> DraftResponse:
         """
         Updates draft content.
@@ -126,7 +138,9 @@ class WorkbenchService:
 
         return await update_draft(draft_id, update, user_oid)
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def heartbeat_lock(
         self, draft_id: UUID, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> dict[str, bool]:
@@ -140,7 +154,9 @@ class WorkbenchService:
         await refresh_lock(draft_id, user_oid)
         return {"success": True}
 
-    @governed_execution(asset_id_arg="draft", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def validate_draft(
         self, draft: DraftCreate, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> ValidationResponse:
@@ -165,7 +181,9 @@ class WorkbenchService:
 
         return ValidationResponse(is_valid=(len(issues) == 0), issues=issues)
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def submit_draft(
         self, draft_id: UUID, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> DraftResponse:
@@ -175,7 +193,9 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, user_oid, groups)
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.PENDING)
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def approve_draft(
         self, draft_id: UUID, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> DraftResponse:
@@ -189,7 +209,9 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, user_oid, groups)
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.APPROVED)
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def reject_draft(
         self, draft_id: UUID, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> DraftResponse:
@@ -203,7 +225,9 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, user_oid, groups)
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.REJECTED)
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=True
+    )
     async def get_artifact_assembly(
         self, draft_id: UUID, user_oid: UUID, groups: List[UUID], signature: Optional[str] = None
     ) -> AgentArtifact:
@@ -216,7 +240,9 @@ class WorkbenchService:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=False)
+    @governed_execution(  # type: ignore[misc]
+        asset_id_arg="draft_id", signature_arg="signature", user_id_arg="user_oid", allow_unsigned=False
+    )
     async def publish_artifact(
         self, draft_id: UUID, request: PublishRequest, signature: str, user_oid: UUID, groups: List[UUID]
     ) -> dict[str, str]:
