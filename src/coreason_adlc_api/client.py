@@ -10,7 +10,7 @@
 
 import json
 import os
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -184,3 +184,26 @@ class CoreasonClient:
         # Explicitly cast for mypy compliance
         schema: dict[str, Any] = response.json()
         return schema
+
+    def promote_draft(self, draft_id: str, signer_callback: Callable[[str], str]) -> str:
+        """
+        Orchestrates the Assemble -> Sign -> Publish workflow.
+        :param signer_callback: A function that takes a JSON string and returns a cryptographic signature.
+        """
+        # 1. Assemble
+        response = self.get(f"/workbench/drafts/{draft_id}/assemble")
+        artifact = response.json()
+
+        # 2. Canonicalize JSON
+        json_str = json.dumps(artifact, sort_keys=True)
+
+        # 3. Sign
+        signature = signer_callback(json_str)
+
+        # 4. Publish
+        publish_resp = self.post(f"/workbench/drafts/{draft_id}/publish", json={"signature": signature})
+        data = publish_resp.json()
+
+        # Explicitly cast to satisfy mypy strict check [no-any-return]
+        url: str = data.get("url", "")
+        return url
