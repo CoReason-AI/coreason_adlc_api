@@ -14,7 +14,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, DraftUpdate
-from coreason_adlc_api.workbench.service import create_draft, get_draft_by_id, get_drafts, update_draft
+from coreason_adlc_api.workbench.service import (
+    create_draft,
+    get_draft_by_id,
+    get_drafts,
+    transition_draft_status,
+    update_draft,
+)
 from fastapi import HTTPException
 
 
@@ -224,3 +230,86 @@ async def test_update_draft_no_fields_not_found(mock_pool: AsyncMock) -> None:
     ):
         await update_draft(uuid.uuid4(), DraftUpdate(), uuid.uuid4())
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_transition_draft_status_success(mock_pool: AsyncMock) -> None:
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    # DRAFT -> PENDING
+    mock_pool.fetchrow.side_effect = [
+        {"status": ApprovalStatus.DRAFT},
+        {
+            "draft_id": draft_id,
+            "user_uuid": user_id,
+            "status": ApprovalStatus.PENDING,
+            "auc_id": "p",
+            "title": "t",
+            "oas_content": {},
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        },
+    ]
+
+    res = await transition_draft_status(draft_id, user_id, ApprovalStatus.PENDING)
+    assert res.status == ApprovalStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_transition_draft_status_not_found(mock_pool: AsyncMock) -> None:
+    mock_pool.fetchrow.return_value = None
+    with pytest.raises(HTTPException) as exc:
+        await transition_draft_status(uuid.uuid4(), uuid.uuid4(), ApprovalStatus.PENDING)
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_transition_draft_status_invalid(mock_pool: AsyncMock) -> None:
+    # PENDING -> DRAFT is invalid
+    mock_pool.fetchrow.return_value = {"status": ApprovalStatus.PENDING}
+    with pytest.raises(HTTPException) as exc:
+        await transition_draft_status(uuid.uuid4(), uuid.uuid4(), ApprovalStatus.DRAFT)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_transition_draft_status_rejected_to_pending(mock_pool: AsyncMock) -> None:
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    mock_pool.fetchrow.side_effect = [
+        {"status": ApprovalStatus.REJECTED},
+        {
+            "draft_id": draft_id,
+            "user_uuid": user_id,
+            "status": ApprovalStatus.PENDING,
+            "auc_id": "p",
+            "title": "t",
+            "oas_content": {},
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        },
+    ]
+    res = await transition_draft_status(draft_id, user_id, ApprovalStatus.PENDING)
+    assert res.status == ApprovalStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_transition_draft_status_pending_to_approved(mock_pool: AsyncMock) -> None:
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    mock_pool.fetchrow.side_effect = [
+        {"status": ApprovalStatus.PENDING},
+        {
+            "draft_id": draft_id,
+            "user_uuid": user_id,
+            "status": ApprovalStatus.APPROVED,
+            "auc_id": "p",
+            "title": "t",
+            "oas_content": {},
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        },
+    ]
+    res = await transition_draft_status(draft_id, user_id, ApprovalStatus.APPROVED)
+    assert res.status == ApprovalStatus.APPROVED

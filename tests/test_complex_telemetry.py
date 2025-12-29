@@ -16,9 +16,10 @@ from uuid import uuid4
 
 import pytest
 import redis
+from loguru import logger
+
 from coreason_adlc_api.middleware.telemetry import async_log_telemetry
 from coreason_adlc_api.telemetry.worker import telemetry_worker
-from loguru import logger
 
 
 class LogCapture:

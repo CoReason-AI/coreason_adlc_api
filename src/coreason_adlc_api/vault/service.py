@@ -10,10 +10,11 @@
 
 from uuid import UUID
 
-from coreason_adlc_api.db import get_pool
-from coreason_adlc_api.vault.crypto import VaultCrypto
 from fastapi import HTTPException, status
 from loguru import logger
+
+from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.vault.crypto import VaultCrypto
 
 # Initialize VaultCrypto once or per request?
 # Per request is safer if key rotation logic existed, but global is fine for now.
