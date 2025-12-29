@@ -49,7 +49,7 @@ def test_check_budget_pass(mock_redis: Any) -> None:
     assert args[1] == 1
     assert "budget:" in args[2]
     assert str(user_id) in args[2]
-    assert args[3] == 500000 # 0.5 * 1_000_000
+    assert args[3] == 500000  # 0.5 * 1_000_000
 
 
 def test_check_budget_exceeded(mock_redis: Any) -> None:

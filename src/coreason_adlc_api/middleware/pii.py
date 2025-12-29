@@ -110,10 +110,11 @@ def scrub_pii_recursive(data: Any) -> Any:
     # We use a stack to traverse and build the structure.
     # Handling tuples is tricky because they are immutable.
     # We can convert tuples to lists, process them, and convert back.
-    # Or, given this is an iterative modifier, we might need a different approach if we want to preserve exact types perfectly deep down without recursion.
+    # Or, given this is an iterative modifier, we might need a different approach if we want to preserve exact
+    # types perfectly deep down without recursion.
     # However, standard JSON payloads usually become lists.
     # If the input is a python object with tuples, we can convert them to lists for the result.
-    # The requirement is to SCRUB PII. Converting tuple to list is usually acceptable in API contexts (JSON doesn't have tuples).
+    # The requirement is to SCRUB PII. Converting tuple to list is usually acceptable in API contexts.
     # If strict type preservation of tuples is required, it's harder iteratively without bottom-up reconstruction.
     # But let's assume converting tuple -> list is fine (safer for scrubbing).
 

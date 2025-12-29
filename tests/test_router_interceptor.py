@@ -38,7 +38,15 @@ def mock_middleware() -> Any:
         mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
         mock.patch("coreason_adlc_api.routers.interceptor.async_log_telemetry") as mock_log,
         mock.patch("coreason_adlc_api.routers.interceptor.litellm.token_counter") as mock_token_counter,
-        mock.patch("coreason_adlc_api.routers.interceptor.litellm.model_cost", {"gpt-4": {"input_cost_per_token": 0.03, "output_cost_per_token": 0.06}})
+        mock.patch(
+            "coreason_adlc_api.routers.interceptor.litellm.model_cost",
+            {
+                "gpt-4": {
+                    "input_cost_per_token": 0.03,
+                    "output_cost_per_token": 0.06,
+                }
+            },
+        ),
     ):
         mock_budget.return_value = True
         mock_proxy.return_value = {"choices": [{"message": {"content": "response content"}}]}

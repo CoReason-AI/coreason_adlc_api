@@ -59,8 +59,8 @@ def estimate_request_cost(model: str, messages: List[Dict[str, Any]]) -> float:
                 # For now, we'll assume if it's not in the map, we use default
                 raise ValueError("Model cost not found")
 
-            input_cost_per_token = cost_info.get("input_cost_per_token", 0.0)
-            output_cost_per_token = cost_info.get("output_cost_per_token", 0.0)
+            input_cost_per_token = float(cost_info.get("input_cost_per_token", 0.0))
+            output_cost_per_token = float(cost_info.get("output_cost_per_token", 0.0))
         except Exception:
             # Fallback defaults (approximate to GPT-3.5 levels if unknown)
             input_cost_per_token = 0.0000005
@@ -71,7 +71,8 @@ def estimate_request_cost(model: str, messages: List[Dict[str, Any]]) -> float:
         # Let's assume a safe buffer, e.g., 500 tokens.
         estimated_output_tokens = 500
 
-        total_cost = (input_tokens * input_cost_per_token) + (estimated_output_tokens * output_cost_per_token)
+        # cast(float, ...) to ensure mypy knows it's a float, as input_tokens comes from untyped lib
+        total_cost = (float(input_tokens) * input_cost_per_token) + (estimated_output_tokens * output_cost_per_token)
         return total_cost
 
     except Exception:
