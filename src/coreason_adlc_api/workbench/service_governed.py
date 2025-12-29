@@ -11,9 +11,6 @@
 from typing import Optional
 from uuid import UUID
 
-from coreason_veritas import governed_execution
-from fastapi import HTTPException, status
-
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.middleware.budget import check_budget_status
@@ -37,6 +34,8 @@ from coreason_adlc_api.workbench.service import (
     transition_draft_status,
     update_draft,
 )
+from coreason_veritas import governed_execution
+from fastapi import HTTPException, status
 
 
 class WorkbenchService:
