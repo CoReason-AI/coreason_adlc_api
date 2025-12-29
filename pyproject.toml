@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "coreason_adlc_api"
-version = "0.1.0"
+version = "0.2.0"
 description = "Secure ADLC Middleware enforcing PII scrubbing, budget caps, and strict governance."
 authors = ["Gowtham A Rao <gowtham.rao@coreason.ai>"]
 license = "Proprietary"
@@ -45,7 +45,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "coreason_adlc_api"
-version = "0.1.0"
+version = "0.2.0"
 description = "Secure ADLC Middleware enforcing PII scrubbing, budget caps, and strict governance."
 readme = "README.md"
 requires-python = ">=3.12, <3.15"

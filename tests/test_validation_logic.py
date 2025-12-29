@@ -2,10 +2,11 @@ from typing import Any, Callable
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+from fastapi.testclient import TestClient
+
 from coreason_adlc_api.app import app
 from coreason_adlc_api.middleware.budget import check_budget_status
 from coreason_adlc_api.middleware.pii import scrub_pii_recursive
-from fastapi.testclient import TestClient
 
 
 # Test PII Recursion

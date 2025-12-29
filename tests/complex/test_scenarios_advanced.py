@@ -15,9 +15,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
+
 from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock, verify_lock_for_update
 from coreason_adlc_api.workbench.schemas import DraftCreate, DraftResponse
-from fastapi import HTTPException
 
 
 # --- Fixtures ---
