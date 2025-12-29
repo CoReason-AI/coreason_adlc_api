@@ -8,19 +8,15 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 
 from coreason_adlc_api.config import settings
-from coreason_adlc_api.middleware.proxy import proxy_breaker
+from coreason_adlc_api.middleware.proxy import _breakers
 
 
 @pytest.fixture(autouse=True)
 def reset_circuit_breaker() -> Generator[None, None, None]:
     """Reset circuit breaker state before and after each test."""
-    proxy_breaker.state = "closed"
-    proxy_breaker.failure_history.clear()
-    proxy_breaker.last_failure_time = 0.0
+    _breakers.clear()
     yield
-    proxy_breaker.state = "closed"
-    proxy_breaker.failure_history.clear()
-    proxy_breaker.last_failure_time = 0.0
+    _breakers.clear()
 
 
 @pytest.fixture(scope="session")
