@@ -10,7 +10,7 @@ from fastapi import HTTPException
 # Service Unit Tests (Testing logic directly)
 
 @pytest.mark.asyncio
-async def test_assemble_artifact_success():
+async def test_assemble_artifact_success() -> None:
     draft_id = uuid4()
     user_id = uuid4()
 
@@ -35,7 +35,7 @@ async def test_assemble_artifact_success():
         assert artifact.created_at == mock_draft.updated_at # Check determinism
 
 @pytest.mark.asyncio
-async def test_assemble_artifact_not_found():
+async def test_assemble_artifact_not_found() -> None:
     with patch("coreason_adlc_api.workbench.service.get_draft_by_id", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = None
         with pytest.raises(HTTPException) as e:
@@ -43,7 +43,7 @@ async def test_assemble_artifact_not_found():
         assert e.value.status_code == 404
 
 @pytest.mark.asyncio
-async def test_assemble_artifact_not_approved():
+async def test_assemble_artifact_not_approved() -> None:
     mock_draft = DraftResponse(
         draft_id=uuid4(),
         user_uuid=uuid4(),
@@ -61,7 +61,7 @@ async def test_assemble_artifact_not_approved():
         assert "must be APPROVED" in str(e.value)
 
 @pytest.mark.asyncio
-async def test_publish_artifact_flow():
+async def test_publish_artifact_flow() -> None:
     draft_id = uuid4()
     user_id = uuid4()
 

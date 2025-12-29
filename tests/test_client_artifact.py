@@ -3,7 +3,7 @@ import json
 from unittest.mock import MagicMock
 from coreason_adlc_api.client import CoreasonClient
 
-def test_client_promote_draft():
+def test_client_promote_draft() -> None:
     # Setup
     client = CoreasonClient()
     client.client = MagicMock()
@@ -22,20 +22,23 @@ def test_client_promote_draft():
 
     # Mock GET and POST
     # We mock request because convenience methods call request
-    def side_effect(method, url, **kwargs):
+    def side_effect(method: str, url: str, **kwargs: object) -> MagicMock:
         if method == "GET" and "assemble" in url:
             return mock_resp_assemble
         if method == "POST" and "publish" in url:
             # Verify signature injection
-            assert "signature" in kwargs["json"]
-            assert kwargs["json"]["signature"] == "valid_sig"
+            json_body = kwargs.get("json", {})
+            if isinstance(json_body, dict):
+                 assert json_body.get("signature") == "valid_sig"
             return mock_resp_publish
         return MagicMock()
 
     client.client.request.side_effect = side_effect
 
     # Execute
-    signer = lambda x: "valid_sig"
+    def signer(x: str) -> str:
+        return "valid_sig"
+
     url = client.promote_draft(draft_id, signer)
 
     # Assert
