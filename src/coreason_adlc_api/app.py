@@ -9,9 +9,11 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+from coreason_veritas.auditor import IERLogger
 from fastapi import FastAPI
 from loguru import logger
 
@@ -19,6 +21,7 @@ from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
 from coreason_adlc_api.telemetry.worker import telemetry_worker
+from coreason_adlc_api.utils import get_redis_client
 
 
 @asynccontextmanager
@@ -31,6 +34,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Initialize Database
     await init_db()
+
+    # Wire Audit Sink (BC-02)
+    def sink_callback(event: dict) -> None:
+        try:
+            redis_client = get_redis_client()
+            attributes = event.get("attributes", {})
+
+            telemetry_event = {
+                "user_uuid": attributes.get("co.user_id"),
+                "auc_id": attributes.get("co.asset_id"),
+                "model_name": event.get("span_name"),
+                "timestamp": event.get("timestamp"),
+            }
+
+            redis_client.rpush("telemetry_queue", json.dumps(telemetry_event))
+        except Exception as e:
+            logger.error(f"Failed to push audit event to telemetry queue: {e}")
+
+    IERLogger().register_sink(sink_callback)
 
     # Start Telemetry Worker
     telemetry_task = asyncio.create_task(telemetry_worker())

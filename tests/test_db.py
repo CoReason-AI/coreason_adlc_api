@@ -11,6 +11,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, get_pool, init_db
 
