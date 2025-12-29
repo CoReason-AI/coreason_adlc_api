@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import asyncio
 from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -103,8 +102,9 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
 
     # 2. Redis: Budget & Telemetry
     mock_redis = MagicMock()
-    # Budget: incrbyfloat returns new total (e.g. 0.05)
-    mock_redis.incrbyfloat.return_value = 0.05
+    # Budget: uses eval now. Returns [1, new_spend, is_new]
+    # Simulate spending 0.01 (request cost) + previous 0.04 = 0.05
+    mock_redis.eval.return_value = [1, 0.05, 0]
 
     # 3. Vault Crypto
     mock_crypto = MagicMock()
@@ -168,10 +168,7 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         # --- Verification Phase ---
 
         # 1. Budget Checked?
-        mock_redis.incrbyfloat.assert_called()  # Should call for budget check
-        # Specifically check the key format if we want to be pedantic, but called is good enough.
-        args, _ = mock_redis.incrbyfloat.call_args
-        assert f"budget:{asyncio.get_event_loop().time()}" not in args[0]  # Just ensuring it ran
+        mock_redis.eval.assert_called()  # Should call eval for budget check
 
         # 2. Vault Accessed?
         mock_pool.fetchrow.assert_called()  # To get encrypted key
@@ -225,9 +222,10 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
     identity = UserIdentity(oid=user_oid, email="poor@example.com", groups=[], full_name="Poor User")
 
     mock_redis = MagicMock()
-    # Simulate Budget Limit Hit: Current spend + Cost > Limit (default $10.0)
-    # Return 11.0
-    mock_redis.incrbyfloat.return_value = 11.0
+    # Simulate Budget Limit Hit:
+    # Lua script returns [0 (failed), current_balance, 0]
+    # We simulate current balance = 10.0, limit = 10.0, cost = 1.0 -> 11.0 > 10.0
+    mock_redis.eval.return_value = [0, 10.0, 0]
 
     with (
         patch("coreason_adlc_api.middleware.budget.get_redis_client", return_value=mock_redis),
@@ -243,7 +241,5 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
         assert exc.value.status_code == 402
         assert "limit exceeded" in exc.value.detail
 
-        # Verify rollback (decrement)
-        assert mock_redis.incrbyfloat.call_count == 2
-        # First call: +1.0 -> Returns 11.0
-        # Second call: -1.0 -> Rollback
+        # Verify no separate rollback call (handled by atomic Lua)
+        assert not mock_redis.incrbyfloat.called
