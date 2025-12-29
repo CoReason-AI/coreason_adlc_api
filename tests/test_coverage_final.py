@@ -12,10 +12,9 @@ import time
 from unittest import mock
 
 import pytest
-from fastapi import HTTPException
-
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.middleware.proxy import execute_inference_proxy, get_api_key_for_model, proxy_breaker
+from fastapi import HTTPException
 
 
 @pytest.mark.asyncio

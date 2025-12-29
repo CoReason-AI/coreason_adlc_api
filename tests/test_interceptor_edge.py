@@ -13,10 +13,9 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from coreason_adlc_api.app import app
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
-
-from coreason_adlc_api.app import app
 
 
 @pytest.fixture

@@ -11,8 +11,6 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
-
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from coreason_adlc_api.workbench.schemas import (
     AgentArtifact,
@@ -23,6 +21,7 @@ from coreason_adlc_api.workbench.schemas import (
     ValidationResponse,
 )
 from coreason_adlc_api.workbench.service_governed import WorkbenchService
+from fastapi import APIRouter, Depends, Header, status
 
 router = APIRouter(prefix="/workbench", tags=["Workbench"])
 

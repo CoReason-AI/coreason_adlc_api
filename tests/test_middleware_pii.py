@@ -12,7 +12,6 @@ from typing import Any
 from unittest import mock
 
 import pytest
-
 from coreason_adlc_api.middleware.pii import scrub_pii_payload
 
 try:

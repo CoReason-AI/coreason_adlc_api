@@ -13,9 +13,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 from uuid import UUID
 
-from loguru import logger
-
 from coreason_adlc_api.utils import get_redis_client
+from loguru import logger
 
 
 async def async_log_telemetry(

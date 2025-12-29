@@ -13,11 +13,10 @@ import uuid
 from unittest import mock
 
 import pytest
-from fastapi import HTTPException
-
 from coreason_adlc_api.middleware.budget import check_budget_guardrail
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker
 from coreason_adlc_api.middleware.pii import scrub_pii_payload
+from fastapi import HTTPException
 
 try:
     from presidio_analyzer import RecognizerResult  # noqa: F401

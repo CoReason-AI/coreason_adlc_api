@@ -16,12 +16,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import jwt
 import pytest
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
-from fastapi import HTTPException
-from httpx import ASGITransport, AsyncClient, Request, Response
-
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import (
     UserIdentity,
@@ -31,6 +25,11 @@ from coreason_adlc_api.auth.identity import (
     upsert_user,
 )
 from coreason_adlc_api.config import settings
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
+from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient, Request, Response
 
 # --- Helpers for RS256 ---
 

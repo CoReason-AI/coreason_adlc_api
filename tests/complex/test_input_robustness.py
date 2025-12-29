@@ -13,9 +13,8 @@ from typing import Any, Dict
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from coreason_adlc_api.app import app
+from httpx import ASGITransport, AsyncClient
 
 try:
     from presidio_analyzer import AnalyzerEngine  # noqa: F401
