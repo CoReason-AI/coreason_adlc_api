@@ -11,16 +11,17 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
+
+from coreason_veritas.auditor import IERLogger
+from fastapi import FastAPI
+from loguru import logger
 
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
 from coreason_adlc_api.telemetry.worker import telemetry_worker
 from coreason_adlc_api.utils import get_redis_client
-from coreason_veritas.auditor import IERLogger
-from fastapi import FastAPI
-from loguru import logger
 
 
 @asynccontextmanager
@@ -35,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
 
     # Configure Veritas Audit Sink
-    def sink_callback(event: dict) -> None:
+    def sink_callback(event: dict[str, Any]) -> None:
         try:
             redis = get_redis_client()
             # Push to telemetry queue for async processing

@@ -11,6 +11,9 @@
 from typing import Optional
 from uuid import UUID
 
+from coreason_veritas import governed_execution
+from fastapi import HTTPException, status
+
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.middleware.budget import check_budget_status
@@ -34,8 +37,6 @@ from coreason_adlc_api.workbench.service import (
     transition_draft_status,
     update_draft,
 )
-from coreason_veritas import governed_execution
-from fastapi import HTTPException, status
 
 
 class WorkbenchService:
@@ -68,7 +69,7 @@ class WorkbenchService:
         await self._verify_project_access(identity, draft.auc_id)
         return draft
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="auc_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def list_drafts(
@@ -81,7 +82,7 @@ class WorkbenchService:
         result = await get_drafts(auc_id)
         return result
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft", user_id_arg="user_oid", signature_arg="signature"
     )
     async def create_draft(
@@ -94,7 +95,7 @@ class WorkbenchService:
         await self._verify_project_access(identity, draft.auc_id)
         return await create_draft(draft, user_oid)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def get_draft(
@@ -111,7 +112,7 @@ class WorkbenchService:
         await self._verify_project_access(identity, draft.auc_id)
         return draft
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def update_draft(
@@ -132,7 +133,7 @@ class WorkbenchService:
         await self._verify_project_access(identity, current_draft.auc_id)
         return await update_draft(draft_id, update, identity.oid)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def refresh_lock(
@@ -144,7 +145,7 @@ class WorkbenchService:
         await refresh_lock(draft_id, identity.oid)
         return {"success": True}
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft", user_id_arg="user_oid", signature_arg="signature"
     )
     async def validate_draft(
@@ -166,7 +167,7 @@ class WorkbenchService:
 
         return ValidationResponse(is_valid=(len(issues) == 0), issues=issues)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def submit_draft(
@@ -178,7 +179,7 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, identity)
         return await transition_draft_status(draft_id, identity.oid, ApprovalStatus.PENDING)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def approve_draft(
@@ -195,7 +196,7 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, identity)
         return await transition_draft_status(draft_id, identity.oid, ApprovalStatus.APPROVED)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def reject_draft(
@@ -212,7 +213,7 @@ class WorkbenchService:
         await self._get_draft_and_verify_access(draft_id, identity)
         return await transition_draft_status(draft_id, identity.oid, ApprovalStatus.REJECTED)
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=True, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def assemble_artifact(
@@ -227,7 +228,7 @@ class WorkbenchService:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
-    @governed_execution(
+    @governed_execution(  # type: ignore[misc]
         allow_unsigned=False, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def publish_artifact(
