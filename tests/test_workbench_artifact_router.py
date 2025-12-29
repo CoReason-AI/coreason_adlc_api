@@ -18,10 +18,10 @@ def client() -> TestClient:
 @pytest.fixture
 def mock_workbench_service() -> Generator[Tuple[AsyncMock, AsyncMock, AsyncMock], None, None]:
     with (
-        patch("coreason_adlc_api.routers.workbench.assemble_artifact") as mock_assemble,
-        patch("coreason_adlc_api.routers.workbench.publish_artifact") as mock_publish,
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id") as mock_get_draft,
-        patch("coreason_adlc_api.routers.workbench.map_groups_to_projects") as mock_groups,
+        patch("coreason_adlc_api.workbench.service_governed.assemble_artifact") as mock_assemble,
+        patch("coreason_adlc_api.workbench.service_governed.publish_artifact") as mock_publish,
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id") as mock_get_draft,
+        patch("coreason_adlc_api.workbench.service_governed.map_groups_to_projects") as mock_groups,
     ):
         mock_groups.return_value = ["test-project"]
         yield mock_assemble, mock_publish, mock_get_draft
@@ -118,8 +118,7 @@ def test_router_publish_success(
 
     resp = client.post(
         f"/api/v1/workbench/drafts/{draft_id}/publish",
-        json={"signature": "sig"},
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", "x-coreason-sig": "sig"},
     )
     assert resp.status_code == 200
     assert resp.json()["url"] == "http://gitlab"
@@ -148,8 +147,37 @@ def test_router_publish_error(
 
     resp = client.post(
         f"/api/v1/workbench/drafts/{draft_id}/publish",
-        json={"signature": "sig"},
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", "x-coreason-sig": "sig"},
     )
     assert resp.status_code == 400
     assert "Bad sig" in resp.json()["detail"]
+
+
+def test_router_publish_missing_header(
+    client: TestClient,
+    mock_oidc_factory: object,
+    mock_workbench_service: Tuple[AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    _, _, mock_get_draft = mock_workbench_service
+    draft_id = uuid4()
+    token = mock_oidc_factory({"groups": ["manager"]})  # type: ignore
+
+    # Draft exists but request is invalid
+    mock_get_draft.return_value = DraftResponse(
+        draft_id=draft_id,
+        user_uuid=uuid4(),
+        auc_id="test-project",
+        title="T",
+        oas_content={},
+        created_at=datetime(2023, 1, 1),
+        updated_at=datetime(2023, 1, 1),
+        status=ApprovalStatus.APPROVED,
+    )
+
+    resp = client.post(
+        f"/api/v1/workbench/drafts/{draft_id}/publish",
+        headers={"Authorization": f"Bearer {token}"},
+        # No header
+    )
+    assert resp.status_code == 400
+    assert "Missing x-coreason-sig" in resp.json()["detail"]

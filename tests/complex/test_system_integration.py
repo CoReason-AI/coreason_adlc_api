@@ -120,15 +120,17 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
 
     with (
         # Patch DB getters
-        patch("coreason_adlc_api.routers.workbench.get_pool", return_value=mock_pool),
+        patch("coreason_adlc_api.workbench.service_governed.get_pool", return_value=mock_pool),
         patch("coreason_adlc_api.middleware.proxy.get_pool", return_value=mock_pool),
         patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool),
         # Patch Redis getters
         patch("coreason_adlc_api.middleware.budget.get_redis_client", return_value=mock_redis),
         patch("coreason_adlc_api.middleware.telemetry.get_redis_client", return_value=mock_redis),
         # Patch Services/Logic
-        patch("coreason_adlc_api.routers.workbench.map_groups_to_projects", new_callable=AsyncMock) as mock_map_groups,
-        patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create_draft,
+        patch(
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects", new_callable=AsyncMock
+        ) as mock_map_groups,
+        patch("coreason_adlc_api.workbench.service_governed.create_draft", new_callable=AsyncMock) as mock_create_draft,
         # Patch VaultCrypto where it is used in proxy.py
         patch("coreason_adlc_api.middleware.proxy.VaultCrypto", return_value=mock_crypto),
         # Patch LiteLLM

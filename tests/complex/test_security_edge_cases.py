@@ -74,10 +74,10 @@ async def test_rbac_session_revocation(mock_identity: UserIdentity, mock_pool: M
     # We patch it where it is imported in routers.workbench
     with (
         patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new_callable=AsyncMock,
         ) as mock_map,
-        patch("coreason_adlc_api.routers.workbench.get_drafts", new_callable=AsyncMock) as mock_get_drafts,
+        patch("coreason_adlc_api.workbench.service_governed.get_drafts", new_callable=AsyncMock) as mock_get_drafts,
     ):
         # 1. Initial State: Access Allowed
         mock_map.return_value = [auc_id]
@@ -108,14 +108,14 @@ async def test_cross_project_creation_denied(mock_identity: UserIdentity, mock_p
     draft_input = DraftCreate(auc_id=target_project, title="Malicious Draft", oas_content={})
 
     with patch(
-        "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+        "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
         new_callable=AsyncMock,
     ) as mock_map:
         # Mock only allowing proj-A
         mock_map.return_value = [allowed_project]
 
         # Patch create_draft to ensure it's NOT called
-        with patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create:
+        with patch("coreason_adlc_api.workbench.service_governed.create_draft", new_callable=AsyncMock) as mock_create:
             with pytest.raises(HTTPException) as exc:
                 await create_new_draft(draft_input, identity=mock_identity)
 
@@ -145,14 +145,14 @@ async def test_cross_project_lock_acquisition_denied(mock_identity: UserIdentity
     # But get_draft_by_id needs the draft ID to find the AUC_ID to check permissions!
     # Catch-22 unless we do a "peek" first.
 
-    with patch("coreason_adlc_api.routers.workbench.get_pool", return_value=mock_pool):
+    with patch("coreason_adlc_api.workbench.service_governed.get_pool", return_value=mock_pool):
         with (
             patch(
-                "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+                "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
                 new_callable=AsyncMock,
             ) as mock_map,
             patch(
-                "coreason_adlc_api.routers.workbench._get_user_roles",
+                "coreason_adlc_api.workbench.service_governed.WorkbenchService._derive_roles",
                 new_callable=AsyncMock,
             ) as mock_roles,
         ):
@@ -169,7 +169,7 @@ async def test_cross_project_lock_acquisition_denied(mock_identity: UserIdentity
             # router -> get_draft_by_id -> acquire_draft_lock -> DB Update
 
             # Patching internal service functions to spy on them
-            with patch("coreason_adlc_api.routers.workbench.get_draft_by_id") as mock_get_draft_service:
+            with patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id") as mock_get_draft_service:
                 # Setup service return value (simulating it found and locked the draft)
                 mock_response = MagicMock()
                 mock_response.auc_id = target_project
@@ -212,12 +212,12 @@ async def test_malformed_json_injection(mock_identity: UserIdentity, mock_pool: 
     draft_input = DraftCreate(auc_id="proj-A", title="Deep Draft", oas_content=deeply_nested)
 
     with patch(
-        "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+        "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
         new_callable=AsyncMock,
     ) as mock_map:
         mock_map.return_value = ["proj-A"]
 
-        with patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create:
+        with patch("coreason_adlc_api.workbench.service_governed.create_draft", new_callable=AsyncMock) as mock_create:
             mock_create.return_value = MagicMock(title="Deep Draft")
 
             response = await create_new_draft(draft_input, identity=mock_identity)

@@ -41,7 +41,7 @@ async def test_create_draft_unauthorized_project(mock_auth_header: str) -> None:
     Expects 403 Forbidden.
     """
     with patch(
-        "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+        "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
         new=AsyncMock(return_value=["project-beta"]),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -70,12 +70,15 @@ async def test_get_draft_unauthorized_project(mock_auth_header: str) -> None:
     )
 
     with (
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
         patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["project-beta"]),  # User only has access to project-beta
         ),
-        patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock(return_value=[])),
+        patch(
+            "coreason_adlc_api.workbench.service_governed.WorkbenchService._derive_roles",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(f"/api/v1/workbench/drafts/{draft_id}", headers={"Authorization": mock_auth_header})
@@ -101,9 +104,9 @@ async def test_update_draft_unauthorized_project(mock_auth_header: str) -> None:
     )
 
     with (
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=mock_resp)),
         patch(
-            "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+            "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
             new=AsyncMock(return_value=["project-beta"]),
         ),
     ):
@@ -124,7 +127,7 @@ async def test_create_draft_invalid_input(mock_auth_header: str) -> None:
     Expects 422 Unprocessable Entity.
     """
     with patch(
-        "coreason_adlc_api.routers.workbench.map_groups_to_projects",
+        "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
         new=AsyncMock(return_value=["project-alpha"]),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

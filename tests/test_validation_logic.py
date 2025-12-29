@@ -132,8 +132,8 @@ def test_workbench_validate_endpoint_integration(mock_oidc_factory: Callable[[di
 
     # Mock the internal logic checks
     with (
-        patch("coreason_adlc_api.routers.workbench.check_budget_status") as mock_budget,
-        patch("coreason_adlc_api.routers.workbench.scrub_pii_recursive") as mock_pii,
+        patch("coreason_adlc_api.workbench.service_governed.check_budget_status") as mock_budget,
+        patch("coreason_adlc_api.workbench.service_governed.scrub_pii_recursive") as mock_pii,
     ):
         # Scenario 1: All Valid
         mock_budget.return_value = True
