@@ -50,7 +50,11 @@ async def create_new_draft(
     Creates a new agent draft.
     """
     return await WorkbenchService().create_draft(  # type: ignore[no-any-return]
-        draft=draft, user_oid=identity.oid, identity=identity, signature=x_coreason_sig
+        draft=draft,
+        user_oid=identity.oid,
+        identity=identity,
+        auc_id=draft.auc_id,
+        signature=x_coreason_sig,
     )
 
 
@@ -112,7 +116,11 @@ async def validate_draft(
     Does NOT save to DB.
     """
     return await WorkbenchService().validate_draft(  # type: ignore[no-any-return]
-        draft=draft, user_oid=identity.oid, identity=identity, signature=x_coreason_sig
+        draft=draft,
+        user_oid=identity.oid,
+        identity=identity,
+        auc_id=draft.auc_id,
+        signature=x_coreason_sig,
     )
 
 
@@ -194,5 +202,10 @@ async def publish_agent_artifact(
     Publishes the signed artifact.
     """
     return await WorkbenchService().publish_artifact(  # type: ignore[no-any-return]
-        draft_id=draft_id, request=request, user_oid=identity.oid, identity=identity, signature=x_coreason_sig
+        draft_id=draft_id,
+        request=request,
+        user_oid=identity.oid,
+        identity=identity,
+        draft_id_str=str(draft_id),
+        signature=x_coreason_sig,
     )

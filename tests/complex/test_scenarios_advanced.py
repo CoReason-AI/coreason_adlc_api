@@ -133,7 +133,9 @@ async def test_project_switching_race_condition(mock_pool: MagicMock) -> None:
 
     # 2. Mock Dependency: map_groups_to_projects
     # Initial state: User HAS access
-    with patch("coreason_adlc_api.routers.workbench.map_groups_to_projects", new_callable=AsyncMock) as mock_map:
+    with patch(
+        "coreason_adlc_api.workbench.service_governed.map_groups_to_projects", new_callable=AsyncMock
+    ) as mock_map:
         mock_map.return_value = [auc_id]
 
         # 3. Call Router Handler (simulating Entry)
@@ -165,9 +167,9 @@ async def test_project_switching_race_condition(mock_pool: MagicMock) -> None:
                 updated_at=datetime.now(),
             )
 
-        with patch("coreason_adlc_api.routers.workbench.create_draft", side_effect=slow_create):
+        with patch("coreason_adlc_api.workbench.service_governed.create_draft", side_effect=slow_create):
             # ACT
-            response = await create_new_draft(draft_req, identity)
+            response = await create_new_draft(draft_req, identity, x_coreason_sig=None)
 
             # ASSERT
             assert response.title == "Race Test"

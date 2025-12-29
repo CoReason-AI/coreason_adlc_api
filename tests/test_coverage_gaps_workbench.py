@@ -62,7 +62,9 @@ async def test_submit_draft_not_found(
     editor_headers, _ = mock_auth_headers_gaps
     draft_id = uuid.uuid4()
 
-    with patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock(return_value=None)):
+    with patch(
+        "coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post(f"/api/v1/workbench/drafts/{draft_id}/submit", headers=editor_headers)
             assert resp.status_code == 404
@@ -78,7 +80,10 @@ async def test_approve_draft_not_manager(
     draft_id = uuid.uuid4()
 
     # Mock roles to NOT include MANAGER
-    with patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock(return_value=["EDITOR"])):
+    with patch(
+        "coreason_adlc_api.workbench.service_governed.WorkbenchService._get_user_roles",
+        new=AsyncMock(return_value=["EDITOR"]),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post(f"/api/v1/workbench/drafts/{draft_id}/approve", headers=editor_headers)
             assert resp.status_code == 403
@@ -94,7 +99,10 @@ async def test_reject_draft_not_manager(
     draft_id = uuid.uuid4()
 
     # Mock roles to NOT include MANAGER
-    with patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock(return_value=["EDITOR"])):
+    with patch(
+        "coreason_adlc_api.workbench.service_governed.WorkbenchService._get_user_roles",
+        new=AsyncMock(return_value=["EDITOR"]),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post(f"/api/v1/workbench/drafts/{draft_id}/reject", headers=editor_headers)
             assert resp.status_code == 403

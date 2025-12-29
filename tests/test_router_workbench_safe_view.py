@@ -15,9 +15,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from coreason_adlc_api.app import app
-from coreason_adlc_api.routers import workbench
-from coreason_adlc_api.workbench.locking import AccessMode
-from coreason_adlc_api.workbench.schemas import DraftResponse
+from coreason_adlc_api.workbench import service_governed
+from coreason_adlc_api.workbench.schemas import AccessMode, DraftResponse
 from httpx import ASGITransport, AsyncClient
 
 
@@ -60,9 +59,13 @@ async def test_get_draft_safe_view_integration(mock_oidc_factory: Any) -> None:
 
     # Patch both _get_user_roles and get_draft_by_id using patch.object
     with (
-        patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=["MANAGER"])),
-        patch.object(workbench, "get_draft_by_id", new=AsyncMock(return_value=mock_resp_obj)) as mock_service,
-        patch.object(workbench, "map_groups_to_projects", new=AsyncMock(return_value=["project-alpha"])),
+        patch.object(
+            service_governed.WorkbenchService, "_get_user_roles", new=AsyncMock(return_value=["MANAGER"])
+        ),
+        patch.object(
+            service_governed, "get_draft_by_id", new=AsyncMock(return_value=mock_resp_obj)
+        ) as mock_service,
+        patch.object(service_governed, "map_groups_to_projects", new=AsyncMock(return_value=["project-alpha"])),
     ):
         manager_token = generate_token(mock_oidc_factory, manager_uuid, ["MANAGER_GROUP"])
 
@@ -95,9 +98,11 @@ async def test_get_draft_locked_access_denied(mock_oidc_factory: Any) -> None:
 
     # Service raises 423
     with (
-        patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=[])),
+        patch.object(service_governed.WorkbenchService, "_get_user_roles", new=AsyncMock(return_value=[])),
         patch.object(
-            workbench, "get_draft_by_id", side_effect=HTTPException(status_code=423, detail="Locked by User A")
+            service_governed,
+            "get_draft_by_id",
+            side_effect=HTTPException(status_code=423, detail="Locked by User A"),
         ),
     ):
         token = generate_token(mock_oidc_factory, developer_uuid, [])
@@ -129,9 +134,9 @@ async def test_get_draft_edit_mode(mock_oidc_factory: Any) -> None:
     # Default is EDIT
 
     with (
-        patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=[])),
-        patch.object(workbench, "get_draft_by_id", new=AsyncMock(return_value=mock_resp_obj)),
-        patch.object(workbench, "map_groups_to_projects", new=AsyncMock(return_value=["project-alpha"])),
+        patch.object(service_governed.WorkbenchService, "_get_user_roles", new=AsyncMock(return_value=[])),
+        patch.object(service_governed, "get_draft_by_id", new=AsyncMock(return_value=mock_resp_obj)),
+        patch.object(service_governed, "map_groups_to_projects", new=AsyncMock(return_value=["project-alpha"])),
     ):
         token = generate_token(mock_oidc_factory, user_uuid, [])
 

@@ -82,10 +82,15 @@ class WorkbenchService:
         return result
 
     @governed_execution(  # type: ignore[misc]
-        allow_unsigned=True, asset_id_arg="draft", user_id_arg="user_oid", signature_arg="signature"
+        allow_unsigned=True, asset_id_arg="auc_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def create_draft(
-        self, draft: DraftCreate, user_oid: UUID, identity: UserIdentity, signature: Optional[str] = None
+        self,
+        draft: DraftCreate,
+        user_oid: UUID,
+        identity: UserIdentity,
+        auc_id: str,
+        signature: Optional[str] = None,
     ) -> DraftResponse:
         """
         Creates a new draft with governance wrapper.
@@ -145,10 +150,15 @@ class WorkbenchService:
         return {"success": True}
 
     @governed_execution(  # type: ignore[misc]
-        allow_unsigned=True, asset_id_arg="draft", user_id_arg="user_oid", signature_arg="signature"
+        allow_unsigned=True, asset_id_arg="auc_id", user_id_arg="user_oid", signature_arg="signature"
     )
     async def validate_draft(
-        self, draft: DraftCreate, user_oid: UUID, identity: UserIdentity, signature: Optional[str] = None
+        self,
+        draft: DraftCreate,
+        user_oid: UUID,
+        identity: UserIdentity,
+        auc_id: str,
+        signature: Optional[str] = None,
     ) -> ValidationResponse:
         """
         Stateless validation of a draft.
@@ -228,7 +238,7 @@ class WorkbenchService:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
     @governed_execution(  # type: ignore[misc]
-        allow_unsigned=False, asset_id_arg="draft_id", user_id_arg="user_oid", signature_arg="signature"
+        allow_unsigned=False, asset_id_arg="draft_id_str", user_id_arg="user_oid", signature_arg="signature"
     )
     async def publish_artifact(
         self,
@@ -236,6 +246,7 @@ class WorkbenchService:
         request: PublishRequest,
         user_oid: UUID,
         identity: UserIdentity,
+        draft_id_str: str,
         signature: Optional[str],
     ) -> dict[str, str]:
         """

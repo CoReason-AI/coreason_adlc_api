@@ -1,3 +1,4 @@
+import os
 from typing import Any, Callable, Generator, cast
 from unittest.mock import MagicMock, patch
 
@@ -6,8 +7,29 @@ import pytest
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.middleware.proxy import proxy_breaker
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
+
+
+@pytest.fixture(scope="session")
+def rsa_key_pair() -> tuple[RSAPrivateKey, RSAPublicKey]:
+    """Generates a fresh RSA key pair for testing (session scoped)."""
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    public_key = private_key.public_key()
+    return private_key, public_key
+
+
+@pytest.fixture(autouse=True)
+def set_veritas_env(rsa_key_pair: tuple[RSAPrivateKey, RSAPublicKey]) -> Generator[None, None, None]:
+    """Ensure COREASON_VERITAS_PUBLIC_KEY is set for all tests with a valid PEM."""
+    _, public_key = rsa_key_pair
+    pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    with patch.dict(os.environ, {"COREASON_VERITAS_PUBLIC_KEY": pem}):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -20,14 +42,6 @@ def reset_circuit_breaker() -> Generator[None, None, None]:
     proxy_breaker.state = "closed"
     proxy_breaker.failure_history.clear()
     proxy_breaker.last_failure_time = 0.0
-
-
-@pytest.fixture(scope="session")
-def rsa_key_pair() -> tuple[RSAPrivateKey, RSAPublicKey]:
-    """Generates a fresh RSA key pair for testing (session scoped)."""
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
-    public_key = private_key.public_key()
-    return private_key, public_key
 
 
 @pytest.fixture

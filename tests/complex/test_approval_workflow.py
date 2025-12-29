@@ -90,10 +90,12 @@ async def test_workflow_happy_path(mock_auth_headers: tuple[dict[str, str], dict
     )
 
     with (
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock()) as mock_get,
-        patch("coreason_adlc_api.routers.workbench.transition_draft_status", new=AsyncMock()) as mock_trans,
-        patch("coreason_adlc_api.routers.workbench.map_groups_to_projects", return_value=["project-alpha"]),
-        patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock()) as mock_roles,
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock()) as mock_get,
+        patch("coreason_adlc_api.workbench.service_governed.transition_draft_status", new=AsyncMock()) as mock_trans,
+        patch("coreason_adlc_api.workbench.service_governed.map_groups_to_projects", return_value=["project-alpha"]),
+        patch(
+            "coreason_adlc_api.workbench.service_governed.WorkbenchService._get_user_roles", new=AsyncMock()
+        ) as mock_roles,
     ):
         # Setup Client
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -157,11 +159,13 @@ async def test_workflow_rejection_loop(mock_auth_headers: tuple[dict[str, str], 
     )
 
     with (
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id", new=AsyncMock()) as mock_get,
-        patch("coreason_adlc_api.routers.workbench.transition_draft_status", new=AsyncMock()) as mock_trans,
-        patch("coreason_adlc_api.routers.workbench.update_draft", new=AsyncMock()) as mock_update,
-        patch("coreason_adlc_api.routers.workbench.map_groups_to_projects", return_value=["project-alpha"]),
-        patch("coreason_adlc_api.routers.workbench._get_user_roles", new=AsyncMock()) as mock_roles,
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock()) as mock_get,
+        patch("coreason_adlc_api.workbench.service_governed.transition_draft_status", new=AsyncMock()) as mock_trans,
+        patch("coreason_adlc_api.workbench.service_governed.update_draft", new=AsyncMock()) as mock_update,
+        patch("coreason_adlc_api.workbench.service_governed.map_groups_to_projects", return_value=["project-alpha"]),
+        patch(
+            "coreason_adlc_api.workbench.service_governed.WorkbenchService._get_user_roles", new=AsyncMock()
+        ) as mock_roles,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             # --- 1. Manager Rejects ---

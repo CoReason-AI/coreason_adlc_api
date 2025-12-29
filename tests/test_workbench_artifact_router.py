@@ -17,10 +17,11 @@ def client() -> TestClient:
 @pytest.fixture
 def mock_workbench_service() -> Generator[Tuple[AsyncMock, AsyncMock, AsyncMock], None, None]:
     with (
-        patch("coreason_adlc_api.routers.workbench.assemble_artifact") as mock_assemble,
-        patch("coreason_adlc_api.routers.workbench.publish_artifact") as mock_publish,
-        patch("coreason_adlc_api.routers.workbench.get_draft_by_id") as mock_get_draft,
-        patch("coreason_adlc_api.routers.workbench.map_groups_to_projects") as mock_groups,
+        patch("coreason_adlc_api.workbench.service_governed.assemble_artifact") as mock_assemble,
+        patch("coreason_adlc_api.workbench.service_governed.publish_artifact") as mock_publish,
+        patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id") as mock_get_draft,
+        patch("coreason_adlc_api.workbench.service_governed.map_groups_to_projects") as mock_groups,
+        patch("coreason_veritas.gatekeeper.SignatureValidator.verify_asset", return_value=True),
     ):
         mock_groups.return_value = ["test-project"]
         yield mock_assemble, mock_publish, mock_get_draft
@@ -118,7 +119,7 @@ def test_router_publish_success(
     resp = client.post(
         f"/api/v1/workbench/drafts/{draft_id}/publish",
         json={"signature": "sig"},
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", "x-coreason-sig": "sig"},
     )
     assert resp.status_code == 200
     assert resp.json()["url"] == "http://gitlab"
@@ -148,7 +149,7 @@ def test_router_publish_error(
     resp = client.post(
         f"/api/v1/workbench/drafts/{draft_id}/publish",
         json={"signature": "sig"},
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", "x-coreason-sig": "sig"},
     )
     assert resp.status_code == 400
     assert "Bad sig" in resp.json()["detail"]
