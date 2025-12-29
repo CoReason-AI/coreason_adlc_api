@@ -1,4 +1,3 @@
-
 from unittest.mock import MagicMock
 
 from coreason_adlc_api.client import CoreasonClient

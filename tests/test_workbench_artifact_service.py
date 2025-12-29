@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -72,9 +71,7 @@ async def test_publish_artifact_flow() -> None:
     user_id = uuid4()
 
     # We mock assemble_artifact to avoid re-testing it
-    with patch(
-        "coreason_adlc_api.workbench.service.assemble_artifact", new_callable=AsyncMock
-    ) as mock_assemble:
+    with patch("coreason_adlc_api.workbench.service.assemble_artifact", new_callable=AsyncMock) as mock_assemble:
         mock_artifact = AsyncMock()
         mock_artifact.id = draft_id
         mock_assemble.return_value = mock_artifact
