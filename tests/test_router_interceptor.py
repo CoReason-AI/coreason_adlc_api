@@ -95,3 +95,24 @@ def test_interceptor_flow_success(mock_user_identity: Any, mock_middleware: Any)
     assert log_kwargs["model_name"] == "gpt-4"
     assert "SCRUBBED" in log_kwargs["input_text"]
     assert "SCRUBBED" in log_kwargs["output_text"]
+
+
+def test_interceptor_cost_estimation_fallback(mock_user_identity: Any, mock_middleware: Any) -> None:
+    mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter = mock_middleware
+
+    # Simulate litellm failure
+    mock_token_counter.side_effect = Exception("LiteLLM Down")
+
+    payload = {
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "hello world"}],
+        "auc_id": "proj-1",
+        "estimated_cost": 0.5,  # Client input
+    }
+
+    response = client.post("/api/v1/chat/completions", json=payload)
+
+    assert response.status_code == 200
+
+    # Fallback cost is 0.01
+    mock_budget.assert_called_once_with(mock_user_identity.oid, 0.01)
