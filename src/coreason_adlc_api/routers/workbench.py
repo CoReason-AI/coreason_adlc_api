@@ -11,6 +11,8 @@
 from typing import Optional
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from coreason_adlc_api.workbench.schemas import (
     AgentArtifact,
@@ -20,7 +22,6 @@ from coreason_adlc_api.workbench.schemas import (
     ValidationResponse,
 )
 from coreason_adlc_api.workbench.service_governed import WorkbenchService
-from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 router = APIRouter(prefix="/workbench", tags=["Workbench"])
 
@@ -30,7 +31,9 @@ async def list_drafts(auc_id: str, identity: UserIdentity = Depends(parse_and_va
     """
     Returns list of drafts filterable by auc_id.
     """
-    return await WorkbenchService().list_drafts(auc_id=auc_id, user_oid=identity.oid, groups=identity.groups)
+    return await WorkbenchService().list_drafts(  # type: ignore[no-any-return]
+        auc_id=auc_id, user_oid=identity.oid, groups=identity.groups
+    )
 
 
 @router.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)
@@ -42,7 +45,7 @@ async def create_new_draft(
     """
     Creates a new agent draft.
     """
-    return await WorkbenchService().create_draft(
+    return await WorkbenchService().create_draft(  # type: ignore[no-any-return]
         draft=draft, user_oid=identity.oid, groups=identity.groups, signature=x_coreason_sig
     )
 
@@ -52,7 +55,9 @@ async def get_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_v
     """
     Returns draft content and acquires lock.
     """
-    return await WorkbenchService().get_draft(draft_id=draft_id, user_oid=identity.oid, groups=identity.groups)
+    return await WorkbenchService().get_draft(  # type: ignore[no-any-return]
+        draft_id=draft_id, user_oid=identity.oid, groups=identity.groups
+    )
 
 
 @router.put("/drafts/{draft_id}", response_model=DraftResponse)
@@ -63,7 +68,7 @@ async def update_existing_draft(
     Updates draft content.
     (Requires active Lock)
     """
-    return await WorkbenchService().update_draft(
+    return await WorkbenchService().update_draft(  # type: ignore[no-any-return]
         draft_id=draft_id, update=update, user_oid=identity.oid, groups=identity.groups
     )
 
@@ -73,7 +78,9 @@ async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_
     """
     Refreshes the lock expiry.
     """
-    return await WorkbenchService().heartbeat_lock(draft_id=draft_id, user_oid=identity.oid, groups=identity.groups)
+    return await WorkbenchService().heartbeat_lock(  # type: ignore[no-any-return]
+        draft_id=draft_id, user_oid=identity.oid, groups=identity.groups
+    )
 
 
 @router.post("/validate", response_model=ValidationResponse)
@@ -83,7 +90,9 @@ async def validate_draft(
     """
     Stateless validation of a draft.
     """
-    return await WorkbenchService().validate_draft(draft=draft, user_oid=identity.oid, groups=identity.groups)
+    return await WorkbenchService().validate_draft(  # type: ignore[no-any-return]
+        draft=draft, user_oid=identity.oid, groups=identity.groups
+    )
 
 
 # --- Approval Workflow Endpoints ---
@@ -94,7 +103,9 @@ async def submit_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_an
     """
     Submits a draft for approval.
     """
-    return await WorkbenchService().submit_draft(draft_id=draft_id, user_oid=identity.oid, groups=identity.groups)
+    return await WorkbenchService().submit_draft(  # type: ignore[no-any-return]
+        draft_id=draft_id, user_oid=identity.oid, groups=identity.groups
+    )
 
 
 @router.post("/drafts/{draft_id}/approve", response_model=DraftResponse)
@@ -102,7 +113,9 @@ async def approve_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_a
     """
     Approves a pending draft.
     """
-    return await WorkbenchService().approve_draft(draft_id=draft_id, user_oid=identity.oid, groups=identity.groups)
+    return await WorkbenchService().approve_draft(  # type: ignore[no-any-return]
+        draft_id=draft_id, user_oid=identity.oid, groups=identity.groups
+    )
 
 
 @router.post("/drafts/{draft_id}/reject", response_model=DraftResponse)
@@ -110,7 +123,9 @@ async def reject_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_an
     """
     Rejects a pending draft.
     """
-    return await WorkbenchService().reject_draft(draft_id=draft_id, user_oid=identity.oid, groups=identity.groups)
+    return await WorkbenchService().reject_draft(  # type: ignore[no-any-return]
+        draft_id=draft_id, user_oid=identity.oid, groups=identity.groups
+    )
 
 
 # --- Artifact Assembly & Publication Endpoints ---
@@ -123,7 +138,7 @@ async def get_artifact_assembly(
     """
     Returns the assembled AgentArtifact for an APPROVED draft.
     """
-    return await WorkbenchService().get_artifact_assembly(
+    return await WorkbenchService().get_artifact_assembly(  # type: ignore[no-any-return]
         draft_id=draft_id, user_oid=identity.oid, groups=identity.groups
     )
 
@@ -139,23 +154,15 @@ async def publish_agent_artifact(
     """
     # Strict mode requires signature, but type hint is Optional in header extraction
     # The service will validate it (or allow_unsigned=False will)
-    # But wait, allow_unsigned=False means signature is REQUIRED in the decorator check?
-    # Or does it mean the decorated function must handle it?
-    # The instructions say: "Decorate with allow_unsigned=False (Strict Mode). It must accept signature (required) and user_oid."
-    # If I pass None, the decorator might fail or the service method logic might fail?
+    # Strict mode requires signature
+    # Decorate with allow_unsigned=False (Strict Mode). It must accept signature (required) and user_oid.
+    # If I pass None, the decorator might fail or the service method logic might fail.
     # The prompt says: "Make the service method accept signature explicitly as a string argument."
-    # If the header is missing, x_coreason_sig is None. Pydantic/FastAPI might allow it if Optional.
-    # I should probably let the Service handle the validation or ensuring it's not None if strict mode is on.
-    # However, for type safety, if I pass None to a function expecting str, mypy will complain.
-    # So I should handle the missing header here or ensure the service accepts Optional[str] but raises error?
-    # The instructions say: "It must accept signature (required)".
-    # So if the header is missing, I should raise 400 or 422 before calling service?
-    # Or maybe the signature is required in the router?
-    # "x_coreason_sig: Optional[str] = Header(None, alias="x-coreason-sig")"
+    # If the header is missing, x_coreason_sig is None.
     # I will stick to the extracted header being Optional (standard for headers),
     # but I will cast or check before calling service if strict mode is required.
-    # Actually, `governed_execution` with `allow_unsigned=False` will check if `signature` argument is present and valid.
-    # If I pass `signature=None`, `governed_execution` will likely raise a GovernanceException.
+    # `governed_execution` with `allow_unsigned=False` checks if `signature` is valid.
+    # If I pass `signature=None`, `governed_execution` will raise a GovernanceException.
     # But for type checking sake:
     if x_coreason_sig is None:
         # If strict mode is enforced, we can raise here or let the service fail.

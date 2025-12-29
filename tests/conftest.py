@@ -8,16 +8,16 @@ try:
 except ImportError:
     mock_veritas = MagicMock()
     # Mock governed_execution to be a passthrough decorator
-    def governed_execution(user_id_arg=None, allow_unsigned=False):
-        def decorator(func):
-            async def wrapper(*args, **kwargs):
+    def governed_execution(user_id_arg: str | None = None, allow_unsigned: bool = False) -> Any:
+        def decorator(func: Any) -> Any:
+            async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 return await func(*args, **kwargs)
             return wrapper
         return decorator
 
     # Mock IERLogger
     class MockIERLogger:
-        def register_sink(self, callback):
+        def register_sink(self, callback: Any) -> None:
             pass
 
     mock_veritas.governance.governed_execution = governed_execution
@@ -30,11 +30,12 @@ except ImportError:
 
 import jwt
 import pytest
-from coreason_adlc_api.config import settings
-from coreason_adlc_api.middleware.proxy import proxy_breaker
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
+
+from coreason_adlc_api.config import settings
+from coreason_adlc_api.middleware.proxy import proxy_breaker
 
 
 @pytest.fixture(autouse=True)

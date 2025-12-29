@@ -13,6 +13,8 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
+
 from coreason_adlc_api.workbench.schemas import (
     AgentArtifact,
     ApprovalStatus,
@@ -21,26 +23,27 @@ from coreason_adlc_api.workbench.schemas import (
     DraftUpdate,
 )
 from coreason_adlc_api.workbench.service_governed import WorkbenchService
-from fastapi import HTTPException
 
 
 @pytest.fixture
-def service():
+def service() -> WorkbenchService:
     return WorkbenchService()
 
 
 @pytest.fixture
-def user_oid():
+def user_oid() -> uuid.UUID:
     return uuid.uuid4()
 
 
 @pytest.fixture
-def group_oid():
+def group_oid() -> uuid.UUID:
     return uuid.uuid4()
 
 
 @pytest.mark.asyncio
-async def test_verify_project_access_success(service, user_oid, group_oid):
+async def test_verify_project_access_success(
+    service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID
+) -> None:
     with patch(
         "coreason_adlc_api.workbench.service_governed.map_groups_to_projects", new=AsyncMock(return_value=["auc-123"])
     ):
@@ -49,7 +52,9 @@ async def test_verify_project_access_success(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_verify_project_access_forbidden(service, user_oid, group_oid):
+async def test_verify_project_access_forbidden(
+    service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID
+) -> None:
     with patch(
         "coreason_adlc_api.workbench.service_governed.map_groups_to_projects", new=AsyncMock(return_value=["auc-other"])
     ):
@@ -59,7 +64,7 @@ async def test_verify_project_access_forbidden(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_create_draft(service, user_oid, group_oid):
+async def test_create_draft(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     draft_input = DraftCreate(auc_id="auc-123", title="Test", oas_content={})
     expected_resp = DraftResponse(
         draft_id=uuid.uuid4(),
@@ -86,7 +91,7 @@ async def test_create_draft(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_approve_draft_manager(service, user_oid, group_oid):
+async def test_approve_draft_manager(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     draft_id = uuid.uuid4()
     mock_draft = DraftResponse(
         draft_id=draft_id,
@@ -118,7 +123,7 @@ async def test_approve_draft_manager(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_approve_draft_not_manager(service, user_oid, group_oid):
+async def test_approve_draft_not_manager(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     mock_pool = AsyncMock()
     mock_pool.fetch.return_value = [{"role_name": "DEVELOPER"}]
 
@@ -130,7 +135,7 @@ async def test_approve_draft_not_manager(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_get_draft_not_found(service, user_oid, group_oid):
+async def test_get_draft_not_found(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)):
         # Need to mock _derive_roles as it is called first
         with patch.object(WorkbenchService, "_derive_roles", new=AsyncMock(return_value=[])):
@@ -140,7 +145,7 @@ async def test_get_draft_not_found(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_publish_artifact_strict(service, user_oid, group_oid):
+async def test_publish_artifact_strict(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     draft_id = uuid.uuid4()
     mock_draft = DraftResponse(
         draft_id=draft_id,
@@ -171,7 +176,7 @@ async def test_publish_artifact_strict(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_list_drafts(service, user_oid, group_oid):
+async def test_list_drafts(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with (
         patch(
             "coreason_adlc_api.workbench.service_governed.map_groups_to_projects",
@@ -184,7 +189,7 @@ async def test_list_drafts(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_update_draft_not_found(service, user_oid, group_oid):
+async def test_update_draft_not_found(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
             await service.update_draft(
@@ -194,7 +199,7 @@ async def test_update_draft_not_found(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_update_draft_success(service, user_oid, group_oid):
+async def test_update_draft_success(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     draft_id = uuid.uuid4()
     mock_draft = DraftResponse(
         draft_id=draft_id,
@@ -222,14 +227,14 @@ async def test_update_draft_success(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_lock(service, user_oid, group_oid):
+async def test_heartbeat_lock(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with patch("coreason_adlc_api.workbench.service_governed.refresh_lock", new=AsyncMock()) as mock_refresh:
         await service.heartbeat_lock(draft_id=uuid.uuid4(), user_oid=user_oid, groups=[group_oid])
         mock_refresh.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_validate_draft_pii(service, user_oid, group_oid):
+async def test_validate_draft_pii(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     # Mock budget and pii
     with (
         patch("coreason_adlc_api.workbench.service_governed.check_budget_status", return_value=True),
@@ -245,7 +250,7 @@ async def test_validate_draft_pii(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_validate_draft_budget(service, user_oid, group_oid):
+async def test_validate_draft_budget(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with (
         patch("coreason_adlc_api.workbench.service_governed.check_budget_status", return_value=False),
         patch(
@@ -259,7 +264,7 @@ async def test_validate_draft_budget(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_submit_draft_not_found(service, user_oid, group_oid):
+async def test_submit_draft_not_found(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
             await service.submit_draft(draft_id=uuid.uuid4(), user_oid=user_oid, groups=[group_oid])
@@ -267,7 +272,7 @@ async def test_submit_draft_not_found(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_submit_draft_success(service, user_oid, group_oid):
+async def test_submit_draft_success(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     draft_id = uuid.uuid4()
     mock_draft = DraftResponse(
         draft_id=draft_id,
@@ -294,7 +299,7 @@ async def test_submit_draft_success(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_reject_draft_not_manager(service, user_oid, group_oid):
+async def test_reject_draft_not_manager(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     mock_pool = AsyncMock()
     mock_pool.fetch.return_value = [{"role_name": "DEVELOPER"}]
     with patch("coreason_adlc_api.workbench.service_governed.get_pool", return_value=mock_pool):
@@ -304,7 +309,7 @@ async def test_reject_draft_not_manager(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_reject_draft_success(service, user_oid, group_oid):
+async def test_reject_draft_success(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     draft_id = uuid.uuid4()
     mock_draft = DraftResponse(
         draft_id=draft_id,
@@ -336,7 +341,9 @@ async def test_reject_draft_success(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_get_artifact_assembly_not_found(service, user_oid, group_oid):
+async def test_get_artifact_assembly_not_found(
+    service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID
+) -> None:
     with patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
             await service.get_artifact_assembly(draft_id=uuid.uuid4(), user_oid=user_oid, groups=[group_oid])
@@ -344,7 +351,9 @@ async def test_get_artifact_assembly_not_found(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_get_artifact_assembly_success(service, user_oid, group_oid):
+async def test_get_artifact_assembly_success(
+    service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID
+) -> None:
     draft_id = uuid.uuid4()
     mock_draft = DraftResponse(
         draft_id=draft_id,
@@ -381,7 +390,9 @@ async def test_get_artifact_assembly_success(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_get_artifact_assembly_value_error(service, user_oid, group_oid):
+async def test_get_artifact_assembly_value_error(
+    service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID
+) -> None:
     draft_id = uuid.uuid4()
     mock_draft = DraftResponse(
         draft_id=draft_id,
@@ -409,7 +420,7 @@ async def test_get_artifact_assembly_value_error(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_publish_artifact_not_found(service, user_oid, group_oid):
+async def test_publish_artifact_not_found(service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID) -> None:
     with patch("coreason_adlc_api.workbench.service_governed.get_draft_by_id", new=AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
             await service.publish_artifact(
@@ -419,7 +430,9 @@ async def test_publish_artifact_not_found(service, user_oid, group_oid):
 
 
 @pytest.mark.asyncio
-async def test_publish_artifact_value_error(service, user_oid, group_oid):
+async def test_publish_artifact_value_error(
+    service: WorkbenchService, user_oid: uuid.UUID, group_oid: uuid.UUID
+) -> None:
     draft_id = uuid.uuid4()
     mock_draft = DraftResponse(
         draft_id=draft_id,

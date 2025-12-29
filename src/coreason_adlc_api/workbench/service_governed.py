@@ -10,7 +10,7 @@
 
 from uuid import UUID
 
-from coreason_veritas.governance import governed_execution  # type: ignore[import]
+from coreason_veritas.governance import governed_execution
 from fastapi import HTTPException, status
 
 from coreason_adlc_api.auth.identity import map_groups_to_projects
@@ -63,26 +63,30 @@ class WorkbenchService:
                 detail=f"User is not authorized to access project {auc_id}",
             )
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def list_drafts(self, auc_id: str, user_oid: UUID, groups: list[UUID]) -> list[DraftResponse]:  # type: ignore[no-any-return]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
+    async def list_drafts(
+        self, auc_id: str, user_oid: UUID, groups: list[UUID]
+    ) -> list[DraftResponse]:
         """
         Returns list of drafts filterable by auc_id.
         """
         await self._verify_project_access(groups, auc_id)
         return await get_drafts(auc_id)
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
     async def create_draft(
         self, draft: DraftCreate, user_oid: UUID, groups: list[UUID], signature: str | None = None
-    ) -> DraftResponse:  # type: ignore[no-any-return]
+    ) -> DraftResponse:
         """
         Creates a new agent draft.
         """
         await self._verify_project_access(groups, draft.auc_id)
         return await create_draft(draft, user_oid)
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def get_draft(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> DraftResponse:  # type: ignore[no-any-return]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
+    async def get_draft(
+        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
+    ) -> DraftResponse:
         """
         Returns draft content and acquires lock.
         """
@@ -94,28 +98,16 @@ class WorkbenchService:
         await self._verify_project_access(groups, draft.auc_id)
         return draft
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
     async def update_draft(
         self, draft_id: UUID, update: DraftUpdate, user_oid: UUID, groups: list[UUID]
-    ) -> DraftResponse:  # type: ignore[no-any-return]
+    ) -> DraftResponse:
         """
         Updates draft content.
         """
-        # Check access by fetching the draft briefly (assumes no lock acquired if just for check, but get_draft_by_id checks lock)
+        # Check access by fetching the draft briefly
+        # (assumes no lock acquired if just for check, but get_draft_by_id checks lock)
         # We need to know auc_id to verify access.
-        # We pass empty roles list to avoid lock acquisition or just peek?
-        # The underlying service `get_draft_by_id` attempts to acquire lock.
-        # If we just want to check AUC ID, we might need a separate call or rely on `update_draft` to fail if not found.
-        # But `update_draft` in service.py does check lock.
-        # Let's do a quick check using `get_draft_by_id` with empty roles?
-        # Actually, `update_draft` in service.py calls `verify_lock_for_update` which checks if we hold the lock.
-        # It also calls `_check_status_for_update`.
-        # However, we need `auc_id` to verify project access BEFORE calling `update_draft` potentially?
-        # Or we can do it after finding the draft.
-        # In the original code:
-        # current_draft = await get_draft_by_id(draft_id, identity.oid, [])
-        # await _verify_project_access(identity, current_draft.auc_id)
-        # return await update_draft(draft_id, update, identity.oid)
 
         current_draft = await get_draft_by_id(draft_id, user_oid, [])
         if not current_draft:
@@ -124,15 +116,19 @@ class WorkbenchService:
         await self._verify_project_access(groups, current_draft.auc_id)
         return await update_draft(draft_id, update, user_oid)
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def heartbeat_lock(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> dict[str, bool]:  # type: ignore[no-any-return]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
+    async def heartbeat_lock(
+        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
+    ) -> dict[str, bool]:
         """
         Refreshes the lock expiry.
         """
         # Access control? The router didn't check project access explicitly for heartbeat, only token validation.
         # But probably good to check?
         # The original code:
-        # async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> dict[str, bool]:
+        # async def heartbeat_lock(
+        #    draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
+        # ) -> dict[str, bool]:
         #    await refresh_lock(draft_id, identity.oid)
         #    return {"success": True}
         # It didn't check project access. `refresh_lock` checks if user owns the lock.
@@ -140,10 +136,10 @@ class WorkbenchService:
         await refresh_lock(draft_id, user_oid)
         return {"success": True}
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
     async def validate_draft(
         self, draft: DraftCreate, user_oid: UUID, groups: list[UUID]
-    ) -> ValidationResponse:  # type: ignore[no-any-return]
+    ) -> ValidationResponse:
         """
         Stateless validation of a draft.
         """
@@ -171,8 +167,10 @@ class WorkbenchService:
 
         return ValidationResponse(is_valid=(len(issues) == 0), issues=issues)
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def submit_draft(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> DraftResponse:  # type: ignore[no-any-return]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
+    async def submit_draft(
+        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
+    ) -> DraftResponse:
         """
         Submits a draft for approval.
         """
@@ -182,8 +180,10 @@ class WorkbenchService:
         await self._verify_project_access(groups, current_draft.auc_id)
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.PENDING)
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def approve_draft(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> DraftResponse:  # type: ignore[no-any-return]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
+    async def approve_draft(
+        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
+    ) -> DraftResponse:
         """
         Approves a pending draft.
         """
@@ -197,8 +197,10 @@ class WorkbenchService:
         await self._verify_project_access(groups, current_draft.auc_id)
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.APPROVED)
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
-    async def reject_draft(self, draft_id: UUID, user_oid: UUID, groups: list[UUID]) -> DraftResponse:  # type: ignore[no-any-return]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
+    async def reject_draft(
+        self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
+    ) -> DraftResponse:
         """
         Rejects a pending draft.
         """
@@ -212,10 +214,10 @@ class WorkbenchService:
         await self._verify_project_access(groups, current_draft.auc_id)
         return await transition_draft_status(draft_id, user_oid, ApprovalStatus.REJECTED)
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)  # type: ignore[misc]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=True)
     async def get_artifact_assembly(
         self, draft_id: UUID, user_oid: UUID, groups: list[UUID]
-    ) -> AgentArtifact:  # type: ignore[no-any-return]
+    ) -> AgentArtifact:
         """
         Returns the assembled AgentArtifact for an APPROVED draft.
         """
@@ -229,10 +231,10 @@ class WorkbenchService:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
-    @governed_execution(user_id_arg="user_oid", allow_unsigned=False)  # type: ignore[misc]
+    @governed_execution(user_id_arg="user_oid", allow_unsigned=False)
     async def publish_artifact(
         self, draft_id: UUID, user_oid: UUID, groups: list[UUID], signature: str
-    ) -> str:  # type: ignore[no-any-return]
+    ) -> str:
         """
         Publishes the signed artifact.
         """

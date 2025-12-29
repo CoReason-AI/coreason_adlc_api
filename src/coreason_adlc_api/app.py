@@ -9,9 +9,11 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
+from coreason_veritas.auditor import IERLogger
 from fastapi import FastAPI
 from loguru import logger
 
@@ -20,7 +22,6 @@ from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
 from coreason_adlc_api.telemetry.worker import telemetry_worker
 from coreason_adlc_api.utils import get_redis_client
-from coreason_veritas.auditor import IERLogger  # type: ignore[import]
 
 
 @asynccontextmanager
@@ -38,7 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     telemetry_task = asyncio.create_task(telemetry_worker())
 
     # Wire up Audit Sink
-    async def sink_callback(event: dict) -> None:
+    async def sink_callback(event: dict[str, Any]) -> None:
         redis = get_redis_client()
         # Transform event to match telemetry_worker schema
         telemetry_event = {
@@ -61,7 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             telemetry_event["model_name"] = "unknown_action"
 
         # Push to Redis queue
-        await redis.rpush("telemetry_queue", str(telemetry_event))
+        redis.rpush("telemetry_queue", json.dumps(telemetry_event))
 
     IERLogger().register_sink(sink_callback)
 

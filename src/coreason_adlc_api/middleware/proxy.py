@@ -11,11 +11,12 @@
 from typing import Any, Dict, List
 
 import litellm
+from fastapi import HTTPException, status
+from loguru import logger
+
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.vault.crypto import VaultCrypto
-from fastapi import HTTPException, status
-from loguru import logger
 
 # Circuit Breaker Configuration
 # Threshold: 5 errors.

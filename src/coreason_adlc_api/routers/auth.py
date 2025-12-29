@@ -12,11 +12,12 @@ import uuid
 
 import httpx
 import jwt
+from fastapi import APIRouter, Body, HTTPException, status
+
 from coreason_adlc_api.auth.identity import UserIdentity, get_oidc_config, upsert_user
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.utils import get_http_client
-from fastapi import APIRouter, Body, HTTPException, status
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
