@@ -12,6 +12,7 @@ import secrets
 from typing import Generator
 
 import pytest
+
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
 # Valid 32-byte hex key

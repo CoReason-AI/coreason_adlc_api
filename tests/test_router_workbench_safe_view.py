@@ -14,11 +14,12 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from coreason_adlc_api.app import app
 from coreason_adlc_api.routers import workbench
 from coreason_adlc_api.workbench.locking import AccessMode
 from coreason_adlc_api.workbench.schemas import DraftResponse
-from httpx import ASGITransport, AsyncClient
 
 
 # Helper to generate tokens with specific claims (roles)
