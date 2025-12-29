@@ -18,10 +18,34 @@ from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
-# Circuit Breaker Configuration
-# Threshold: 5 errors.
-# Reset timeout: 60 seconds.
-proxy_breaker = AsyncCircuitBreaker(fail_max=5, reset_timeout=60)
+# Circuit Breaker Registry
+# Stores circuit breakers keyed by provider name
+_breakers: Dict[str, AsyncCircuitBreaker] = {}
+
+
+def get_circuit_breaker(provider: str) -> AsyncCircuitBreaker:
+    """
+    Returns the circuit breaker for the given provider.
+    Creates a new one if it doesn't exist.
+    """
+    if provider not in _breakers:
+        # Threshold: 5 errors.
+        # Reset timeout: 60 seconds.
+        _breakers[provider] = AsyncCircuitBreaker(fail_max=5, reset_timeout=60)
+    return _breakers[provider]
+
+
+def get_provider_for_model(model: str) -> str:
+    """
+    Determines the provider for a given model.
+    """
+    try:
+        # litellm.get_llm_provider returns (provider, model, api_key, api_base)
+        provider, _, _, _ = litellm.get_llm_provider(model)  # type: ignore[attr-defined]
+        return str(provider)
+    except Exception:
+        # Fallback or strict?
+        return model.split("/")[0] if "/" in model else "openai"
 
 
 async def get_api_key_for_model(auc_id: str, model: str) -> str:
@@ -30,24 +54,10 @@ async def get_api_key_for_model(auc_id: str, model: str) -> str:
     """
     pool = get_pool()
 
-    # Map model name to service name (e.g. gpt-4 -> openai, claude -> anthropic)
-    # For now, we assume the 'service_name' column in DB matches what we need,
-    # or we do a lookup. The spec says:
-    # "service_name VARCHAR(50) NOT NULL, -- e.g., 'openai', 'deepseek'"
-    # Ideally we derive service from model name via litellm.get_llm_provider(model)
-    # But for this atomic unit, let's assume the user passes a mapped service name or we infer it.
-    # To keep it simple and robust, we'll try to guess provider from model name using litellm helper
-    # if possible, or just look up by model name if the schema supports it.
+    provider = get_provider_for_model(model)
+
     # Spec FR-API-013 says `service_name`.
     # Let's assume we store keys by service_name (e.g. 'openai').
-
-    try:
-        # litellm.get_llm_provider returns (provider, model, api_key, api_base)
-        provider, _, _, _ = litellm.get_llm_provider(model)  # type: ignore[attr-defined]
-    except Exception:
-        # Fallback or strict?
-        provider = model.split("/")[0] if "/" in model else "openai"
-
     query = """
         SELECT encrypted_value
         FROM vault.secrets
@@ -83,6 +93,9 @@ async def execute_inference_proxy(
     Enforces temperature=0.0 and injects seed.
     """
     try:
+        # 0. Determine Provider
+        provider = get_provider_for_model(model)
+
         # 1. Get API Key
         # We do this outside the breaker because it's DB access, not external API.
         api_key = await get_api_key_for_model(auc_id, model)
@@ -100,13 +113,14 @@ async def execute_inference_proxy(
         # 3. Call LiteLLM
         # litellm.completion is blocking, but supports async via acompletion
         # We wrap the external call with the Circuit Breaker
-        async with proxy_breaker:
+        breaker = get_circuit_breaker(provider)
+        async with breaker:
             response = await litellm.acompletion(**kwargs)
 
         return response
 
     except CircuitBreakerOpenError as e:
-        logger.error("Circuit Breaker Open for Inference Proxy")
+        logger.error(f"Circuit Breaker Open for Inference Proxy (Provider: {get_provider_for_model(model)})")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Upstream model service is currently unstable. Please try again later.",
