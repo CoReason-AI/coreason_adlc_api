@@ -37,23 +37,26 @@ def mock_middleware() -> Any:
         mock.patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy") as mock_proxy,
         mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
         mock.patch("coreason_adlc_api.routers.interceptor.async_log_telemetry") as mock_log,
+        mock.patch("coreason_adlc_api.routers.interceptor.litellm.token_counter") as mock_token_counter,
+        mock.patch("coreason_adlc_api.routers.interceptor.litellm.model_cost", {"gpt-4": {"input_cost_per_token": 0.03, "output_cost_per_token": 0.06}})
     ):
         mock_budget.return_value = True
         mock_proxy.return_value = {"choices": [{"message": {"content": "response content"}}]}
         mock_scrub.side_effect = lambda x: f"SCRUBBED[{x}]"
         mock_log.return_value = None
+        mock_token_counter.return_value = 10  # 10 tokens
 
-        yield mock_budget, mock_proxy, mock_scrub, mock_log
+        yield mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter
 
 
 def test_interceptor_flow_success(mock_user_identity: Any, mock_middleware: Any) -> None:
-    mock_budget, mock_proxy, mock_scrub, mock_log = mock_middleware
+    mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter = mock_middleware
 
     payload = {
         "model": "gpt-4",
         "messages": [{"role": "user", "content": "hello world"}],
         "auc_id": "proj-1",
-        "estimated_cost": 0.05,
+        "estimated_cost": 0.0001,  # Client tries to cheat with low estimate
     }
 
     response = client.post("/api/v1/chat/completions", json=payload)
@@ -62,7 +65,14 @@ def test_interceptor_flow_success(mock_user_identity: Any, mock_middleware: Any)
     assert response.json()["choices"][0]["message"]["content"] == "response content"
 
     # Verify Middleware calls
-    mock_budget.assert_called_once_with(mock_user_identity.oid, 0.05)
+    # Calculated Cost:
+    # Input: 10 tokens * 0.03 = 0.3
+    # Output: 500 tokens (buffer) * 0.06 = 30.0
+    # Total: 30.3
+    expected_cost = (10 * 0.03) + (500 * 0.06)
+
+    # We assert that the budget check uses the server-calculated cost, not the client's 0.0001
+    mock_budget.assert_called_once_with(mock_user_identity.oid, expected_cost)
 
     mock_proxy.assert_called_once()
     assert mock_proxy.call_args[1]["model"] == "gpt-4"

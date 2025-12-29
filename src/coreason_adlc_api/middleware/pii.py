@@ -99,33 +99,39 @@ def scrub_pii_payload(text_payload: str | None) -> str | None:
 def scrub_pii_recursive(data: Any) -> Any:
     """
     Recursively scans and scrubs PII from the input data structure.
-    Supported types: dict, list, str.
+    Supported types: dict, list, tuple, str.
     """
     if isinstance(data, str):
         return scrub_pii_payload(data)
-    if not isinstance(data, (dict, list)):
+    if not isinstance(data, (dict, list, tuple)):
         return data
 
     # Iterative stack-based approach to avoid RecursionError
-    # We rebuild the structure bottom-up or by processing nodes.
-    # Since we need to modify the structure (or return a new one),
-    # let's traverse and build a new structure.
-    # But rebuilding a deeply nested structure iteratively can be tricky.
-    # Easier: Use a stack to traverse, but constructing the return value is hard.
-    # Alternative: Use a stack of (parent, key, value) to process?
-    #
-    # Actually, for just scrubbing strings in leaves, we can do it.
-    # But we need to return a new object (we shouldn't mutate input in place ideally,
-    # though the original recursive function returned new lists/dicts).
+    # We use a stack to traverse and build the structure.
+    # Handling tuples is tricky because they are immutable.
+    # We can convert tuples to lists, process them, and convert back.
+    # Or, given this is an iterative modifier, we might need a different approach if we want to preserve exact types perfectly deep down without recursion.
+    # However, standard JSON payloads usually become lists.
+    # If the input is a python object with tuples, we can convert them to lists for the result.
+    # The requirement is to SCRUB PII. Converting tuple to list is usually acceptable in API contexts (JSON doesn't have tuples).
+    # If strict type preservation of tuples is required, it's harder iteratively without bottom-up reconstruction.
+    # But let's assume converting tuple -> list is fine (safer for scrubbing).
 
-    # Let's use an iterative deep copy with modification.
+    # If the root is a tuple, we convert to list first.
+    root_is_tuple = isinstance(data, tuple)
+
     new_data: Any
     if isinstance(data, dict):
         new_data = data.copy()
+    elif isinstance(data, tuple):
+        new_data = list(data)
     else:  # data is list
         new_data = data[:]
 
-    stack = [(new_data, data)]  # (target_container, source_container)
+    # Stack contains (target_container, source_container)
+    # source_container is the original data
+    # target_container is the mutable copy we are building (dict or list)
+    stack = [(new_data, data)]
 
     while stack:
         target, source = stack.pop()
@@ -133,18 +139,22 @@ def scrub_pii_recursive(data: Any) -> Any:
         iterator: Any
         if isinstance(source, dict):
             iterator = source.items()
-        else:  # source is list
+        elif isinstance(source, (list, tuple)):
             iterator = enumerate(source)
+        else:
+            continue
 
         for k, v in iterator:
             if isinstance(v, str):
                 # Scrub string
                 target[k] = scrub_pii_payload(v)
-            elif isinstance(v, (dict, list)):
+            elif isinstance(v, (dict, list, tuple)):
                 # Create new container
                 new_sub: Any
                 if isinstance(v, dict):
                     new_sub = v.copy()
+                elif isinstance(v, tuple):
+                    new_sub = list(v)
                 else:
                     new_sub = v[:]
 
@@ -152,5 +162,8 @@ def scrub_pii_recursive(data: Any) -> Any:
                 stack.append((new_sub, v))
             else:
                 target[k] = v
+
+    if root_is_tuple:
+        return tuple(new_data)
 
     return new_data
