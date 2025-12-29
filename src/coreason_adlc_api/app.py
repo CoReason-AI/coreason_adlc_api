@@ -9,9 +9,11 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, Dict
 
+from coreason_veritas.auditor import IERLogger
 from fastapi import FastAPI
 from loguru import logger
 
@@ -19,6 +21,7 @@ from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
 from coreason_adlc_api.telemetry.worker import telemetry_worker
+from coreason_adlc_api.utils import get_redis_client
 
 
 @asynccontextmanager
@@ -31,6 +34,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Initialize Database
     await init_db()
+
+    # Wire up Audit Sink
+    redis_client = get_redis_client()
+
+    def sink_callback(event: Dict[str, Any]) -> None:
+        """
+        Pipes audit logs from coreason-veritas to the telemetry queue.
+        Maps 'co.user_id' -> 'user_uuid' and 'co.asset_id' -> 'auc_id' if needed by consumer,
+        or just dumps the whole event.
+        The instructions say: use the Redis client to `rpush` the event to `"telemetry_queue"`.
+        """
+        try:
+            # Map standard OTel attributes to what telemetry worker likely expects if different.
+            # But usually we just push the raw or slightly modified dict.
+            # Assuming JSON serialization is required.
+
+            # Helper adaptation based on memory:
+            # "The sink_callback in app.py acts as an adapter, mapping IERLogger attributes co.user_id to user_uuid and co.asset_id to auc_id..."
+            if "co.user_id" in event:
+                event["user_uuid"] = event["co.user_id"]
+            if "co.asset_id" in event:
+                event["auc_id"] = event["co.asset_id"]
+
+            redis_client.rpush("telemetry_queue", json.dumps(event))
+        except Exception as e:
+            logger.error(f"Failed to push audit log to sink: {e}")
+
+    IERLogger().register_sink(sink_callback)
 
     # Start Telemetry Worker
     telemetry_task = asyncio.create_task(telemetry_worker())

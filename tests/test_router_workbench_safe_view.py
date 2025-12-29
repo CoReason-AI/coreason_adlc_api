@@ -58,12 +58,14 @@ async def test_get_draft_safe_view_integration(mock_oidc_factory: Any) -> None:
     )
     mock_resp_obj.mode = AccessMode.SAFE_VIEW
 
-    # Patch both _get_user_roles and get_draft_by_id using patch.object
+    # Patch WorkbenchService in the router module
     with (
-        patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=["MANAGER"])),
-        patch.object(workbench, "get_draft_by_id", new=AsyncMock(return_value=mock_resp_obj)) as mock_service,
-        patch.object(workbench, "map_groups_to_projects", new=AsyncMock(return_value=["project-alpha"])),
+        patch("coreason_adlc_api.routers.workbench.WorkbenchService") as MockServiceCls,
+        patch("coreason_adlc_api.routers.workbench._verify_project_access", new=AsyncMock()),
     ):
+        mock_service_instance = MockServiceCls.return_value
+        mock_service_instance.get_draft = AsyncMock(return_value=mock_resp_obj)
+
         manager_token = generate_token(mock_oidc_factory, manager_uuid, ["MANAGER_GROUP"])
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -76,11 +78,13 @@ async def test_get_draft_safe_view_integration(mock_oidc_factory: Any) -> None:
             assert data["mode"] == "SAFE_VIEW"
             assert data["draft_id"] == str(draft_id)
 
-            # Verify service was called with roles
-            args, _ = mock_service.call_args
-            assert args[0] == draft_id
-            assert args[1] == uuid.UUID(manager_uuid)
-            assert "MANAGER" in args[2]
+            # Verify service was called correctly
+            mock_service_instance.get_draft.assert_awaited_once()
+            _, kwargs = mock_service_instance.get_draft.call_args
+            assert kwargs["draft_id"] == draft_id
+            assert kwargs["user_oid"] == uuid.UUID(manager_uuid)
+            # Groups are passed as list of UUIDs, verifying length
+            assert len(kwargs["groups"]) == 1
 
 
 @pytest.mark.asyncio
@@ -93,13 +97,16 @@ async def test_get_draft_locked_access_denied(mock_oidc_factory: Any) -> None:
 
     from fastapi import HTTPException
 
-    # Service raises 423
+    # Service raises 423 (mocked)
     with (
-        patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=[])),
-        patch.object(
-            workbench, "get_draft_by_id", side_effect=HTTPException(status_code=423, detail="Locked by User A")
-        ),
+        patch("coreason_adlc_api.routers.workbench.WorkbenchService") as MockServiceCls,
+        patch("coreason_adlc_api.routers.workbench._verify_project_access", new=AsyncMock()),
     ):
+        mock_service_instance = MockServiceCls.return_value
+        # If the service (underlying) raises 423, the governed service usually propagates it
+        # unless it catches it. Assuming propagation.
+        mock_service_instance.get_draft = AsyncMock(side_effect=HTTPException(status_code=423, detail="Locked by User A"))
+
         token = generate_token(mock_oidc_factory, developer_uuid, [])
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -129,10 +136,12 @@ async def test_get_draft_edit_mode(mock_oidc_factory: Any) -> None:
     # Default is EDIT
 
     with (
-        patch.object(workbench, "_get_user_roles", new=AsyncMock(return_value=[])),
-        patch.object(workbench, "get_draft_by_id", new=AsyncMock(return_value=mock_resp_obj)),
-        patch.object(workbench, "map_groups_to_projects", new=AsyncMock(return_value=["project-alpha"])),
+        patch("coreason_adlc_api.routers.workbench.WorkbenchService") as MockServiceCls,
+        patch("coreason_adlc_api.routers.workbench._verify_project_access", new=AsyncMock()),
     ):
+        mock_service_instance = MockServiceCls.return_value
+        mock_service_instance.get_draft = AsyncMock(return_value=mock_resp_obj)
+
         token = generate_token(mock_oidc_factory, user_uuid, [])
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
