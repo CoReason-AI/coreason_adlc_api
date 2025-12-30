@@ -16,10 +16,8 @@ from fastapi import HTTPException
 
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.middleware.proxy import (
+    InferenceProxyService,
     _breakers,
-    execute_inference_proxy,
-    get_api_key_for_model,
-    get_circuit_breaker,
 )
 
 
@@ -71,6 +69,8 @@ async def test_circuit_breaker_call_method() -> None:
 @pytest.mark.asyncio
 async def test_get_api_key_decryption_failure() -> None:
     """Test get_api_key_for_model when decryption fails."""
+    proxy_service = InferenceProxyService()
+
     with (
         mock.patch("coreason_adlc_api.middleware.proxy.get_pool") as mock_pool,
         mock.patch("coreason_adlc_api.middleware.proxy.VaultCrypto") as mock_crypto_cls,
@@ -84,7 +84,7 @@ async def test_get_api_key_decryption_failure() -> None:
         mock_crypto_cls.return_value = mock_instance
 
         with pytest.raises(HTTPException) as exc:
-            await get_api_key_for_model("proj-1", "gpt-4")
+            await proxy_service.get_api_key_for_model("proj-1", "gpt-4")
 
         assert exc.value.status_code == 500
         assert "Secure Vault access failed" in exc.value.detail
@@ -93,8 +93,14 @@ async def test_get_api_key_decryption_failure() -> None:
 @pytest.mark.asyncio
 async def test_proxy_generic_exception() -> None:
     """Test execute_inference_proxy handling generic exception from inside block."""
+    proxy_service = InferenceProxyService()
+
+    # We patch the METHODS of the service class if we want to mock internal calls,
+    # OR we mock the external dependencies.
+    # Here we mock dependencies.
+
     with (
-        mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key,
+        mock.patch.object(proxy_service, "get_api_key_for_model") as mock_get_key,
         mock.patch("coreason_adlc_api.middleware.proxy.litellm.acompletion") as mock_completion,
         mock.patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider,
     ):
@@ -106,7 +112,7 @@ async def test_proxy_generic_exception() -> None:
         _breakers.clear()
 
         with pytest.raises(HTTPException) as exc:
-            await execute_inference_proxy([], "gpt-4", "proj-1")
+            await proxy_service.execute_inference([], "gpt-4", "proj-1")
 
         assert exc.value.status_code == 500
         assert "Unexpected Error" in exc.value.detail
@@ -115,24 +121,24 @@ async def test_proxy_generic_exception() -> None:
 @pytest.mark.asyncio
 async def test_proxy_breaker_open_exception() -> None:
     """Explicitly test the CircuitBreakerOpenError catch block in proxy."""
-    # We can mock the breaker instance on the proxy module to force it to raise
+    proxy_service = InferenceProxyService()
 
     # We assume provider is openai
-    breaker = get_circuit_breaker("openai")
+    breaker = proxy_service.get_circuit_breaker("openai")
     breaker.state = "open"
     breaker.last_failure_time = time.time()
 
     # Need to mock get_api_key otherwise it might fail first (if we didn't mock DB)
 
     with (
-        mock.patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model") as mock_get_key,
+        mock.patch.object(proxy_service, "get_api_key_for_model") as mock_get_key,
         mock.patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider,
     ):
         mock_get_key.return_value = "key"
         mock_get_provider.return_value = ("openai", "model", "k", "b")
 
         with pytest.raises(HTTPException) as exc:
-            await execute_inference_proxy([], "gpt-4", "proj-1")
+            await proxy_service.execute_inference([], "gpt-4", "proj-1")
 
         assert exc.value.status_code == 503
         assert "Upstream model service is currently unstable" in exc.value.detail

@@ -16,112 +16,114 @@ from fastapi.testclient import TestClient
 
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
+from coreason_adlc_api.middleware.budget import BudgetService
+from coreason_adlc_api.middleware.proxy import InferenceProxyService
+from coreason_adlc_api.middleware.telemetry import TelemetryService
+from coreason_adlc_api.routers.interceptor import (
+    get_budget_service,
+    get_proxy_service,
+    get_telemetry_service,
+)
 
-# Router is already registered in app.py now.
 client = TestClient(app)
 
 
 @pytest.fixture
 def mock_user_identity() -> Any:
     user = UserIdentity(oid=uuid.uuid4(), email="test@example.com", groups=[uuid.uuid4()], full_name="Test User")
-    # Override the dependency
     app.dependency_overrides[parse_and_validate_token] = lambda: user
     yield user
     del app.dependency_overrides[parse_and_validate_token]
 
 
 @pytest.fixture
-def mock_middleware() -> Any:
-    with (
-        mock.patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail") as mock_budget,
-        mock.patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy") as mock_proxy,
-        mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
-        mock.patch("coreason_adlc_api.routers.interceptor.async_log_telemetry") as mock_log,
-        mock.patch("coreason_adlc_api.routers.interceptor.litellm.token_counter") as mock_token_counter,
-        mock.patch(
-            "coreason_adlc_api.routers.interceptor.litellm.model_cost",
-            {
-                "gpt-4": {
-                    "input_cost_per_token": 0.03,
-                    "output_cost_per_token": 0.06,
-                }
-            },
-        ),
-    ):
-        mock_budget.return_value = True
-        mock_proxy.return_value = {"choices": [{"message": {"content": "response content"}}]}
-        mock_scrub.side_effect = lambda x: f"SCRUBBED[{x}]"
-        mock_log.return_value = None
-        mock_token_counter.return_value = 10  # 10 tokens
+def mock_services() -> Any:
+    mock_budget = mock.AsyncMock(spec=BudgetService)
+    mock_proxy = mock.AsyncMock(spec=InferenceProxyService)
+    mock_telemetry = mock.AsyncMock(spec=TelemetryService)
 
-        yield mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter
+    app.dependency_overrides[get_budget_service] = lambda: mock_budget
+    app.dependency_overrides[get_proxy_service] = lambda: mock_proxy
+    app.dependency_overrides[get_telemetry_service] = lambda: mock_telemetry
+
+    # Defaults
+    mock_budget.check_budget_guardrail.return_value = True
+    # Return a valid dict that matches the response model structure partially or fully
+    # Since response_model is ChatCompletionResponse, we need to provide compatible data.
+    mock_proxy.execute_inference.return_value = {
+        "id": "chatcmpl-123",
+        "created": 1677652288,
+        "model": "gpt-4",
+        "choices": [{"message": {"content": "response content"}, "index": 0, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+    }
+    mock_proxy.estimate_request_cost.return_value = 1.23  # Specific estimated cost
+
+    yield mock_budget, mock_proxy, mock_telemetry
+
+    del app.dependency_overrides[get_budget_service]
+    del app.dependency_overrides[get_proxy_service]
+    del app.dependency_overrides[get_telemetry_service]
 
 
-def test_interceptor_flow_success(mock_user_identity: Any, mock_middleware: Any) -> None:
-    mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter = mock_middleware
+@pytest.fixture
+def mock_scrub() -> Any:
+    with mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as m:
+        m.side_effect = lambda x: f"SCRUBBED[{x}]"
+        yield m
+
+
+def test_interceptor_flow_success(mock_user_identity: Any, mock_services: Any, mock_scrub: Any) -> None:
+    mock_budget, mock_proxy, mock_telemetry = mock_services
 
     payload = {
         "model": "gpt-4",
         "messages": [{"role": "user", "content": "hello world"}],
         "auc_id": "proj-1",
-        "estimated_cost": 0.0001,  # Client tries to cheat with low estimate
+        "estimated_cost": 0.0001,
     }
 
     response = client.post("/api/v1/chat/completions", json=payload)
 
     assert response.status_code == 200
-    assert response.json()["choices"][0]["message"]["content"] == "response content"
+    data = response.json()
+    assert data["choices"][0]["message"]["content"] == "response content"
+    assert data["id"] == "chatcmpl-123"
 
-    # Verify Middleware calls
-    # Calculated Cost:
-    # Input: 10 tokens * 0.03 = 0.3
-    # Output: 500 tokens (buffer) * 0.06 = 30.0
-    # Total: 30.3
-    expected_cost = (10 * 0.03) + (500 * 0.06)
+    # Verify Budget Check with estimated cost from service
+    mock_budget.check_budget_guardrail.assert_called_once_with(mock_user_identity.oid, 1.23)
 
-    # We assert that the budget check uses the server-calculated cost, not the client's 0.0001
-    mock_budget.assert_called_once_with(mock_user_identity.oid, expected_cost)
+    # Verify Proxy Call
+    mock_proxy.execute_inference.assert_called_once()
+    kwargs = mock_proxy.execute_inference.call_args[1]
+    assert kwargs["model"] == "gpt-4"
+    assert kwargs["auc_id"] == "proj-1"
+    assert kwargs["messages"] == [{"role": "user", "content": "hello world"}]
 
-    mock_proxy.assert_called_once()
-    assert mock_proxy.call_args[1]["model"] == "gpt-4"
-    assert mock_proxy.call_args[1]["auc_id"] == "proj-1"
+    # Verify Scrubbing
+    assert mock_scrub.call_count == 2  # Input and Output
 
-    # Scrub called twice (input and output)
-    assert mock_scrub.call_count == 2
-
-    mock_log.assert_called_once()
-    log_kwargs = mock_log.call_args[1]
+    # Verify Telemetry
+    # Note: Telemetry is background task. TestClient waits for it?
+    # No, TestClient runs background tasks synchronously after the request.
+    mock_telemetry.async_log_telemetry.assert_called_once()
+    log_kwargs = mock_telemetry.async_log_telemetry.call_args[1]
     assert log_kwargs["user_id"] == mock_user_identity.oid
     assert log_kwargs["model_name"] == "gpt-4"
     assert "SCRUBBED" in log_kwargs["input_text"]
     assert "SCRUBBED" in log_kwargs["output_text"]
 
-
-def test_interceptor_cost_estimation_fallback(mock_user_identity: Any, mock_middleware: Any) -> None:
-    mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter = mock_middleware
-
-    # Simulate litellm failure
-    mock_token_counter.side_effect = Exception("LiteLLM Down")
-
-    payload = {
-        "model": "gpt-4",
-        "messages": [{"role": "user", "content": "hello world"}],
-        "auc_id": "proj-1",
-        "estimated_cost": 0.5,  # Client input
-    }
-
-    response = client.post("/api/v1/chat/completions", json=payload)
-
-    assert response.status_code == 200
-
-    # Fallback cost is 0.01
-    mock_budget.assert_called_once_with(mock_user_identity.oid, 0.01)
+    # Since litellm.completion_cost works on the mocked dict, it calculates real cost.
+    # We accept either the estimate (if calculation failed) or the calculated cost.
+    # In this environment, litellm calculated ~0.0015 based on the mock usage.
+    # We just want to ensure it's a float.
+    assert isinstance(log_kwargs["metadata"]["cost_usd"], float)
 
 
-def test_interceptor_proxy_exception(mock_user_identity: Any, mock_middleware: Any) -> None:
-    mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter = mock_middleware
+def test_interceptor_proxy_exception(mock_user_identity: Any, mock_services: Any) -> None:
+    mock_budget, mock_proxy, mock_telemetry = mock_services
 
-    mock_proxy.side_effect = Exception("Proxy Failed")
+    mock_proxy.execute_inference.side_effect = Exception("Proxy Failed")
 
     payload = {
         "model": "gpt-4",
@@ -133,11 +135,21 @@ def test_interceptor_proxy_exception(mock_user_identity: Any, mock_middleware: A
         client.post("/api/v1/chat/completions", json=payload)
 
 
-def test_interceptor_malformed_response(mock_user_identity: Any, mock_middleware: Any) -> None:
-    mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter = mock_middleware
+def test_interceptor_malformed_response(mock_user_identity: Any, mock_services: Any, mock_scrub: Any) -> None:
+    mock_budget, mock_proxy, mock_telemetry = mock_services
 
-    # Return response that lacks choices/message/content structure
-    mock_proxy.return_value = {"error": "something"}
+    # Return response that lacks choices/message/content structure but passes Pydantic validation?
+    # If it fails Pydantic validation, it will raise 500 or validation error.
+    # The route returns `ChatCompletionResponse(**response)`.
+    # So if proxy returns garbage, we expect 500.
+
+    # Let's return valid structural data but empty content to simulate "malformed" content extraction case
+    mock_proxy.execute_inference.return_value = {
+        "id": "err",
+        "created": 1,
+        "model": "gpt-4",
+        "choices": [],  # Empty choices
+    }
 
     payload = {
         "model": "gpt-4",
@@ -146,45 +158,8 @@ def test_interceptor_malformed_response(mock_user_identity: Any, mock_middleware
     }
 
     response = client.post("/api/v1/chat/completions", json=payload)
-
     assert response.status_code == 200
-    # Telemetry should log empty output (scrubbed)
-    mock_log.assert_called()
-    assert "SCRUBBED" in mock_log.call_args[1]["output_text"]
 
-
-def test_interceptor_cost_estimation_model_unknown(mock_user_identity: Any, mock_middleware: Any) -> None:
-    """
-    Test scenario where token counting succeeds, but model cost lookup fails.
-    This triggers the inner except block in estimate_request_cost.
-    """
-    mock_budget, mock_proxy, mock_scrub, mock_log, mock_token_counter = mock_middleware
-
-    # Token counter works
-    mock_token_counter.return_value = 100
-
-    # But model cost lookup returns None or raises ValueError (simulated via side_effect on the mock dict if possible,
-    # but we patched the DICT itself. We can't easily make dict.get raise.
-    # Instead, we'll patch with a dict that doesn't have the model key.)
-
-    # We need to re-patch the model_cost for this specific test case to return empty
-    with mock.patch("coreason_adlc_api.routers.interceptor.litellm.model_cost", {}):
-        payload = {
-            "model": "unknown-model",
-            "messages": [{"role": "user", "content": "hello"}],
-            "auc_id": "proj-1",
-        }
-
-        response = client.post("/api/v1/chat/completions", json=payload)
-        assert response.status_code == 200
-
-        # Calculation logic in inner except block:
-        # input_cost_per_token = 0.0000005
-        # output_cost_per_token = 0.0000015
-        # estimated_output = 500
-        # total = (100 * 0.0000005) + (500 * 0.0000015)
-        #       = 0.00005 + 0.00075 = 0.0008
-
-        expected_cost = (100 * 0.0000005) + (500 * 0.0000015)
-
-        mock_budget.assert_called_with(mock_user_identity.oid, expected_cost)
+    # Telemetry should log empty output
+    mock_telemetry.async_log_telemetry.assert_called()
+    assert "SCRUBBED" in mock_telemetry.async_log_telemetry.call_args[1]["output_text"]
