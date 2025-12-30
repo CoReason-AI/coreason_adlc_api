@@ -56,8 +56,8 @@ def test_check_budget_status_under_limit() -> None:
         mock_redis = MagicMock()
         mock_get_client.return_value = mock_redis
 
-        # Scenario: Spend is 10.0, limit is 50.0 (default)
-        mock_redis.get.return_value = b"10.0"
+        # Scenario: Spend is 10.0 (micros = 10,000,000), limit is 50.0 (50,000,000)
+        mock_redis.get.return_value = b"10000000"
 
         assert check_budget_status(user_id) is True
 
@@ -68,8 +68,8 @@ def test_check_budget_status_over_limit() -> None:
         mock_redis = MagicMock()
         mock_get_client.return_value = mock_redis
 
-        # Scenario: Spend is 60.0
-        mock_redis.get.return_value = b"60.0"
+        # Scenario: Spend is 60.0 (micros = 60,000,000)
+        mock_redis.get.return_value = b"60000000"
 
         assert check_budget_status(user_id) is False
 

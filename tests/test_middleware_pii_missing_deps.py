@@ -107,6 +107,35 @@ def test_pii_empty_payload() -> None:
     assert pii.scrub_pii_payload(None) is None
 
 
+def test_pii_recursion_tuples_missing_deps() -> None:
+    """
+    Test recursive traversal of tuples even if analyzer is missing.
+    Ensures structural logic is covered.
+    """
+    # Patch AnalyzerEngine to None in the module to simulate missing deps
+    with patch("coreason_adlc_api.middleware.pii.AnalyzerEngine", None):
+        pii.PIIAnalyzer._instance = None
+        pii.PIIAnalyzer._analyzer = None
+
+        data = {"key": ("value", "safe")}
+        # Should recurse into dict, then tuple, then strings.
+        # Strings should return REDACTED MISSING
+
+        result = pii.scrub_pii_recursive(data)
+
+        assert isinstance(result, dict)
+        # Nested tuples are converted to lists for mutability
+        assert isinstance(result["key"], list)
+        assert result["key"][0] == "<REDACTED: PII ANALYZER MISSING>"
+        assert result["key"][1] == "<REDACTED: PII ANALYZER MISSING>"
+
+        # Test Root Tuple Preservation
+        tuple_data = ("value",)
+        tuple_result = pii.scrub_pii_recursive(tuple_data)
+        assert isinstance(tuple_result, tuple)
+        assert tuple_result[0] == "<REDACTED: PII ANALYZER MISSING>"
+
+
 def test_pii_import_error_coverage() -> None:
     """
     Test the ImportError block by forcing a reload of the module while presidio_analyzer is masked.

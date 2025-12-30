@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from coreason_adlc_api.auth.identity import UserIdentity
 from coreason_adlc_api.routers.interceptor import ChatCompletionRequest, chat_completions
@@ -163,7 +163,12 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
             estimated_cost=0.01,
         )
 
-        _ = await chat_completions(chat_req, identity)
+        bg_tasks = BackgroundTasks()
+        _ = await chat_completions(chat_req, bg_tasks, identity)
+
+        # Execute background tasks manually for the test
+        for task in bg_tasks.tasks:
+            await task()
 
         # --- Verification Phase ---
 
@@ -235,8 +240,10 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
             model="gpt-4", messages=[{"role": "user", "content": "hi"}], auc_id=auc_id, estimated_cost=1.0
         )
 
+        bg_tasks = BackgroundTasks()
+
         with pytest.raises(HTTPException) as exc:
-            await chat_completions(req, identity)
+            await chat_completions(req, bg_tasks, identity)
 
         assert exc.value.status_code == 402
         assert "limit exceeded" in exc.value.detail
