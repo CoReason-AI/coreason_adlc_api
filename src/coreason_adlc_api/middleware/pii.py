@@ -143,7 +143,7 @@ def scrub_pii_recursive(data: Any) -> Any:
         elif isinstance(source, (list, tuple)):
             iterator = enumerate(source)
         else:
-            continue
+            continue  # pragma: no cover
 
         for k, v in iterator:
             if isinstance(v, str):
