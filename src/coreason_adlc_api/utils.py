@@ -14,10 +14,10 @@ import redis.asyncio as redis
 from coreason_adlc_api.config import settings
 
 # Global Redis pool
-_redis_pool: redis.ConnectionPool | None = None
+_redis_pool: redis.ConnectionPool | None = None  # type: ignore
 
 
-def get_redis_client() -> redis.Redis:
+def get_redis_client() -> redis.Redis:  # type: ignore
     """
     Creates and returns an ASYNC Redis client using a shared connection pool.
     """

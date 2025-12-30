@@ -1,5 +1,5 @@
 from typing import Any, Callable
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -24,7 +24,6 @@ async def test_scrub_pii_recursive_dict() -> None:
         return val
 
     with patch("coreason_adlc_api.middleware.pii.scrub_pii_payload", side_effect=side_effect):
-
         scrubbed = await scrub_pii_recursive(data)
 
         assert scrubbed["key1"] == "<REDACTED PERSON>"

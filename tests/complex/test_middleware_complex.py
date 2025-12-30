@@ -10,7 +10,7 @@
 
 import asyncio
 import uuid
-from typing import Any, AsyncGenerator
+from typing import Any
 from unittest import mock
 
 import pytest

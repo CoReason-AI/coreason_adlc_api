@@ -1,5 +1,5 @@
 from typing import Any
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
 
 import pytest
 
@@ -35,6 +35,7 @@ async def test_scrub_pii_iterative_branches() -> None:
     """
     Tests various branches of the iterative scrub_pii_recursive function to ensure 100% coverage.
     """
+
     async def identity(x: str | None) -> str | None:
         return x
 
