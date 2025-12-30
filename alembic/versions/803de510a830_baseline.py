@@ -5,14 +5,14 @@ Revises:
 Create Date: 2025-12-30 06:16:48.719720
 
 """
+
 from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
+from alembic import op  # type: ignore
 
 
 # revision identifiers, used by Alembic.
-revision: str = '803de510a830'
+revision: str = "803de510a830"
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -20,7 +20,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-
     # 1. Auth Schema (src/coreason_adlc_api/auth/ddl.sql)
     op.execute("CREATE SCHEMA IF NOT EXISTS identity;")
 
@@ -81,8 +80,12 @@ def upgrade() -> None:
         );
     """)
 
-    op.execute("CREATE INDEX IF NOT EXISTS idx_drafts_gin ON workbench.agent_drafts USING GIN (agent_tools_index);")
-    op.execute("CREATE INDEX IF NOT EXISTS idx_drafts_auc ON workbench.agent_drafts(auc_id);")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_drafts_gin ON workbench.agent_drafts USING GIN (agent_tools_index);"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_drafts_auc ON workbench.agent_drafts(auc_id);"
+    )
 
     # 4. Telemetry Schema (src/coreason_adlc_api/telemetry/ddl.sql)
     op.execute("CREATE SCHEMA IF NOT EXISTS telemetry;")
@@ -101,8 +104,12 @@ def upgrade() -> None:
         ) PARTITION BY RANGE (timestamp);
     """)
 
-    op.execute("ALTER TABLE telemetry.telemetry_logs ALTER COLUMN request_payload SET STORAGE EXTENDED;")
-    op.execute("ALTER TABLE telemetry.telemetry_logs ALTER COLUMN response_payload SET STORAGE EXTENDED;")
+    op.execute(
+        "ALTER TABLE telemetry.telemetry_logs ALTER COLUMN request_payload SET STORAGE EXTENDED;"
+    )
+    op.execute(
+        "ALTER TABLE telemetry.telemetry_logs ALTER COLUMN response_payload SET STORAGE EXTENDED;"
+    )
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS telemetry.telemetry_logs_default PARTITION OF telemetry.telemetry_logs
@@ -112,7 +119,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-
     op.execute("DROP TABLE IF EXISTS telemetry.telemetry_logs_default;")
     op.execute("DROP TABLE IF EXISTS telemetry.telemetry_logs;")
     op.execute("DROP SCHEMA IF EXISTS telemetry;")
