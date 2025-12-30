@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 
-from coreason_adlc_api.middleware.proxy import _breakers, execute_inference_proxy
+from coreason_adlc_api.middleware.proxy import InferenceProxyService, _breakers
 
 
 @pytest.mark.asyncio
@@ -15,9 +15,16 @@ async def test_circuit_breaker_isolation() -> None:
     # Reset breakers for test isolation
     _breakers.clear()
 
+    proxy_service = InferenceProxyService()
+
     # Mock dependencies
+    # We mock the methods on the service class, because execute_inference calls self.get_provider_for_model
+    # but self.get_provider_for_model calls litellm.get_llm_provider, so we patch litellm.
+
     with (
-        patch("coreason_adlc_api.middleware.proxy.get_api_key_for_model", new_callable=AsyncMock) as mock_get_key,
+        patch(
+            "coreason_adlc_api.middleware.proxy.InferenceProxyService.get_api_key_for_model", new_callable=AsyncMock
+        ) as mock_get_key,
         patch("coreason_adlc_api.middleware.proxy.litellm.acompletion", new_callable=AsyncMock) as mock_acompletion,
         patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider,
     ):
@@ -38,7 +45,7 @@ async def test_circuit_breaker_isolation() -> None:
 
         for _ in range(5):
             with pytest.raises(HTTPException):
-                await execute_inference_proxy(
+                await proxy_service.execute_inference(
                     messages=[{"role": "user", "content": "hi"}], model="fail-model", auc_id="proj-1"
                 )
 
@@ -51,7 +58,7 @@ async def test_circuit_breaker_isolation() -> None:
         mock_acompletion.side_effect = None
         mock_acompletion.return_value = "Success"
 
-        response = await execute_inference_proxy(
+        response = await proxy_service.execute_inference(
             messages=[{"role": "user", "content": "hi"}], model="ok-model", auc_id="proj-1"
         )
 
