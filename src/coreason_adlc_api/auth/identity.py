@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+import asyncio
 import uuid
 from typing import Any, Dict, List, Optional, cast
 from uuid import UUID
@@ -91,7 +92,9 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
         )
 
     try:
-        signing_key = _JWKS_CLIENT.get_signing_key_from_jwt(token)
+        # Offload blocking network call to thread executor
+        loop = asyncio.get_running_loop()
+        signing_key = await loop.run_in_executor(None, _JWKS_CLIENT.get_signing_key_from_jwt, token)
 
         payload = jwt.decode(
             token,

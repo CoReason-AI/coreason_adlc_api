@@ -11,7 +11,7 @@
 import asyncio
 import json
 from typing import Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -50,7 +50,7 @@ async def test_telemetry_producer_redis_failure(capture_logs: LogCapture) -> Non
     Verify that async_log_telemetry handles Redis connection errors gracefully
     (logs error, does not raise exception to caller).
     """
-    mock_client = MagicMock()
+    mock_client = AsyncMock()
     mock_client.rpush.side_effect = redis.ConnectionError("Redis is down")
 
     with patch("coreason_adlc_api.middleware.telemetry.get_redis_client", return_value=mock_client):
@@ -73,7 +73,7 @@ async def test_telemetry_worker_malformed_and_empty_data(capture_logs: LogCaptur
     and continues processing valid items without crashing.
     """
     # Mock Redis Client
-    mock_client = MagicMock()
+    mock_client = AsyncMock()
     valid_payload = {
         "user_uuid": str(uuid4()),
         "auc_id": "test-auc",
@@ -102,12 +102,7 @@ async def test_telemetry_worker_malformed_and_empty_data(capture_logs: LogCaptur
 
     # Mock DB Pool
     mock_pool = MagicMock()
-    mock_pool.execute = MagicMock()
-
-    async def async_execute(*args: object, **kwargs: object) -> None:
-        pass
-
-    mock_pool.execute.side_effect = async_execute
+    mock_pool.execute = AsyncMock()
 
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_client),
@@ -135,7 +130,7 @@ async def test_telemetry_worker_redis_down(capture_logs: LogCapture) -> None:
     Verify that telemetry_worker handles Redis connection errors with backoff
     and does not crash.
     """
-    mock_client = MagicMock()
+    mock_client = AsyncMock()
     # Side effects:
     # 1. Redis Connection Error
     # 2. Stop worker (CancelledError)
@@ -149,14 +144,8 @@ async def test_telemetry_worker_redis_down(capture_logs: LogCapture) -> None:
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_client),
         patch("coreason_adlc_api.telemetry.worker.get_pool", return_value=mock_pool),
-        patch("asyncio.sleep", new_callable=MagicMock) as mock_sleep,
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
     ):
-
-        async def async_sleep_side_effect(*args: object, **kwargs: object) -> None:
-            pass
-
-        mock_sleep.side_effect = async_sleep_side_effect
-
         await telemetry_worker()
 
         # Assertions

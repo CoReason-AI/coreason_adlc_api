@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import httpx
-import redis
+import redis.asyncio as redis
 
 from coreason_adlc_api.config import settings
 
@@ -17,21 +17,17 @@ from coreason_adlc_api.config import settings
 _redis_pool: redis.ConnectionPool | None = None
 
 
-def get_redis_client() -> "redis.Redis[str]":
+def get_redis_client() -> redis.Redis:
     """
-    Creates and returns a Redis client using a shared connection pool.
+    Creates and returns an ASYNC Redis client using a shared connection pool.
     """
     global _redis_pool
     if _redis_pool is None:
-        _redis_pool = redis.ConnectionPool(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DB,
-            password=settings.REDIS_PASSWORD,
+        _redis_pool = redis.ConnectionPool.from_url(
+            f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
             decode_responses=True,
         )
-    # Cast to Redis[str] because decode_responses=True in pool
-    return redis.Redis(connection_pool=_redis_pool)  # type: ignore[return-value]
+    return redis.Redis(connection_pool=_redis_pool)
 
 
 def get_http_client() -> httpx.AsyncClient:

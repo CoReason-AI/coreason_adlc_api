@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Optional
 
 from loguru import logger
@@ -34,33 +35,51 @@ class PIIAnalyzer:
             cls._instance = super(PIIAnalyzer, cls).__new__(cls)
         return cls._instance
 
-    def get_analyzer(self) -> Optional["AnalyzerEngine"]:
+    def init_analyzer(self) -> None:
+        """
+        Explicitly initialize the analyzer. Useful for warm-up during startup.
+        """
         if self._analyzer is None:
             if AnalyzerEngine is None:
                 logger.warning("Presidio Analyzer not available (missing dependency). PII scrubbing will be disabled.")
-                return None
+                return
 
             logger.info("Initializing Presidio Analyzer Engine...")
             self._analyzer = AnalyzerEngine()
             logger.info("Presidio Analyzer Initialized.")
+
+    def get_analyzer(self) -> Optional["AnalyzerEngine"]:
+        if self._analyzer is None:
+            self.init_analyzer()
         return self._analyzer
 
 
-def scrub_pii_payload(text_payload: str | None) -> str | None:
+async def scrub_pii_payload(text_payload: str | None) -> str | None:
     """
     Scans the payload for PII entities (PHONE, EMAIL, PERSON) and replaces them with <REDACTED {ENTITY_TYPE}>.
     Does NOT log the original text.
+    Runs in a thread executor to avoid blocking the event loop.
     """
     if not text_payload:
         return text_payload
 
+    loop = asyncio.get_running_loop()
+
+    try:
+        # We run the blocking analysis in a thread executor
+        return await loop.run_in_executor(None, _scrub_sync, text_payload)
+    except Exception as e:
+        logger.error(f"PII Scrubbing failed: {e}")
+        raise ValueError("PII Scrubbing failed.") from e
+
+
+def _scrub_sync(text_payload: str) -> str:
+    """
+    Synchronous implementation of scrubbing logic to be run in executor.
+    """
     try:
         analyzer = PIIAnalyzer().get_analyzer()
         if analyzer is None:
-            # Fallback for when library is missing (e.g. Python 3.14)
-            # Failing closed is safest for a security tool, but failing open allows the app to run.
-            # Given the context, if the library is missing, we likely can't scrub.
-            # Returning a placeholder indicating failure.
             return "<REDACTED: PII ANALYZER MISSING>"
 
         # Analyze
@@ -89,34 +108,21 @@ def scrub_pii_payload(text_payload: str | None) -> str | None:
         if "exceeds maximum" in str(e):
             logger.warning(f"PII Scrubbing skipped due to excessive length: {len(text_payload)} chars.")
             return "<REDACTED: PAYLOAD TOO LARGE FOR PII ANALYSIS>"
-        logger.error(f"PII Scrubbing failed: {e}")
-        raise ValueError("PII Scrubbing failed.") from e
-    except Exception as e:
-        logger.error(f"PII Scrubbing failed: {e}")
-        raise ValueError("PII Scrubbing failed.") from e
+        raise e
 
 
-def scrub_pii_recursive(data: Any) -> Any:
+async def scrub_pii_recursive(data: Any) -> Any:
     """
-    Recursively scans and scrubs PII from the input data structure.
+    Recursively (iteratively) scans and scrubs PII from the input data structure.
     Supported types: dict, list, tuple, str.
+    Returns: A new structure with PII redacted. Tuples are converted to lists.
     """
     if isinstance(data, str):
-        return scrub_pii_payload(data)
+        return await scrub_pii_payload(data)
     if not isinstance(data, (dict, list, tuple)):
         return data
 
     # Iterative stack-based approach to avoid RecursionError
-    # We use a stack to traverse and build the structure.
-    # Handling tuples is tricky because they are immutable.
-    # We can convert tuples to lists, process them, and convert back.
-    # Or, given this is an iterative modifier, we might need a different approach if we want to preserve exact
-    # types perfectly deep down without recursion.
-    # However, standard JSON payloads usually become lists.
-    # If the input is a python object with tuples, we can convert them to lists for the result.
-    # The requirement is to SCRUB PII. Converting tuple to list is usually acceptable in API contexts.
-    # If strict type preservation of tuples is required, it's harder iteratively without bottom-up reconstruction.
-    # But let's assume converting tuple -> list is fine (safer for scrubbing).
 
     # If the root is a tuple, we convert to list first.
     root_is_tuple = isinstance(data, tuple)
@@ -130,8 +136,6 @@ def scrub_pii_recursive(data: Any) -> Any:
         new_data = data[:]
 
     # Stack contains (target_container, source_container)
-    # source_container is the original data
-    # target_container is the mutable copy we are building (dict or list)
     stack = [(new_data, data)]
 
     while stack:
@@ -143,12 +147,12 @@ def scrub_pii_recursive(data: Any) -> Any:
         elif isinstance(source, (list, tuple)):
             iterator = enumerate(source)
         else:
-            continue  # pragma: no cover
+            continue
 
         for k, v in iterator:
             if isinstance(v, str):
-                # Scrub string
-                target[k] = scrub_pii_payload(v)
+                # Scrub string (async)
+                target[k] = await scrub_pii_payload(v)
             elif isinstance(v, (dict, list, tuple)):
                 # Create new container
                 new_sub: Any

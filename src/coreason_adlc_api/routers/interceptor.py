@@ -97,7 +97,7 @@ async def chat_completions(
     server_estimated_cost = estimate_request_cost(request.model, request.messages)
 
     # This is blocking.
-    check_budget_guardrail(user.oid, server_estimated_cost)
+    await check_budget_guardrail(user.oid, server_estimated_cost)
 
     # 2. PII Scrubbing (Input)
     # Spec says: "The API must pass the raw request_payload... to Presidio."
@@ -150,8 +150,8 @@ async def chat_completions(
     # Let's simple-concat input messages for logging.
     input_text = "\n".join([m.get("content", "") for m in request.messages])
 
-    scrubbed_input = scrub_pii_payload(input_text) or ""
-    scrubbed_output = scrub_pii_payload(response_content) or ""
+    scrubbed_input = await scrub_pii_payload(input_text) or ""
+    scrubbed_output = await scrub_pii_payload(response_content) or ""
 
     # 6. Async Telemetry Logging
     latency_ms = int((time.time() - start_time) * 1000)
