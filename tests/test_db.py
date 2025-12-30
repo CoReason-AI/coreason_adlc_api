@@ -30,10 +30,7 @@ async def test_db_lifecycle() -> None:
         db_module._pool = None
 
         # Test Init
-        # We also mock _run_ddl to avoid file I/O or connection usage in this unit test
-        with patch("coreason_adlc_api.db._run_ddl", new=AsyncMock()) as mock_ddl:
-            await init_db()
-            mock_ddl.assert_awaited_once()
+        await init_db()
 
         # We check ANY for init function because it's a local function
         mock_create.assert_called_once()
@@ -103,11 +100,7 @@ async def test_concurrent_db_init() -> None:
         await asyncio.sleep(0.01)
         return mock_pool
 
-    # Mock _run_ddl to avoid side effects during concurrent testing
-    with (
-        patch("asyncpg.create_pool", side_effect=delayed_create),
-        patch("coreason_adlc_api.db._run_ddl", new=AsyncMock()),
-    ):
+    with patch("asyncpg.create_pool", side_effect=delayed_create):
         # Launch 5 concurrent init calls
         await asyncio.gather(init_db(), init_db(), init_db(), init_db(), init_db())
 
@@ -128,10 +121,7 @@ async def test_pool_restart() -> None:
     mock_pool_2 = AsyncMock()
 
     # 1. Init
-    with (
-        patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_1)),
-        patch("coreason_adlc_api.db._run_ddl", new=AsyncMock()),
-    ):
+    with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_1)):
         await init_db()
         assert get_pool() == mock_pool_1
 
@@ -141,10 +131,7 @@ async def test_pool_restart() -> None:
         get_pool()
 
     # 3. Re-Init
-    with (
-        patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_2)),
-        patch("coreason_adlc_api.db._run_ddl", new=AsyncMock()),
-    ):
+    with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool_2)):
         await init_db()
         assert get_pool() == mock_pool_2
 
