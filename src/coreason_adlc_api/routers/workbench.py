@@ -141,12 +141,12 @@ async def validate_draft(
     issues = []
 
     # 1. Budget Check
-    if not check_budget_status(identity.oid):
+    if not await check_budget_status(identity.oid):
         issues.append("Budget Limit Reached")
 
     # 2. PII Check
     try:
-        scrubbed_content = scrub_pii_recursive(draft.oas_content)
+        scrubbed_content = await scrub_pii_recursive(draft.oas_content)
         # Deep comparison
         if scrubbed_content != draft.oas_content:
             issues.append("PII Detected")

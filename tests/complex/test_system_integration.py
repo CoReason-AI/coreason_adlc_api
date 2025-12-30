@@ -93,15 +93,11 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
     # 1. DB: RBAC & Drafts
     # Queries: map_groups_to_projects, create_draft, get_api_key...
 
-    # We'll use side_effect to handle different queries if needed, or just lenient mocks.
-    # For map_groups_to_projects (called in Workbench), we patch the function directly usually.
-    # For Vault secret fetch, it uses pool.fetchrow.
-
     # Mock Vault Secret Return
     mock_pool.fetchrow.return_value = {"encrypted_value": b"encrypted_fake_key"}
 
-    # 2. Redis: Budget & Telemetry
-    mock_redis = MagicMock()
+    # 2. Redis: Budget & Telemetry (Async)
+    mock_redis = AsyncMock()
     # Budget: uses eval now. Returns [1, new_spend, is_new]
     # Simulate spending 0.01 (request cost) + previous 0.04 = 0.05
     mock_redis.eval.return_value = [1, 0.05, 0]
@@ -138,14 +134,18 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
             return_value=("openai", "gpt-4", "k", "b"),
         ),
         patch("coreason_adlc_api.routers.interceptor.litellm.completion_cost", return_value=0.03),  # Real cost calc
-        # Patch PII Scrubbing
+        # Patch PII Scrubbing - return coroutines
         patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
     ):
         # Configure Mocks
         mock_map_groups.return_value = [auc_id]
         mock_create_draft.return_value = MagicMock(auc_id=auc_id, title="Agent Smith")
         mock_acompletion.return_value = mock_litellm_resp
-        mock_scrub.side_effect = lambda x: x.replace("sensitive@example.com", "<REDACTED>")
+
+        async def mock_scrub_side_effect(x: str) -> str:
+            return x.replace("sensitive@example.com", "<REDACTED>")
+
+        mock_scrub.side_effect = mock_scrub_side_effect
 
         # --- STEP 1: Workbench - Create Draft ---
         draft_req = DraftCreate(auc_id=auc_id, title="Agent Smith", oas_content={})
@@ -226,7 +226,7 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
 
     identity = UserIdentity(oid=user_oid, email="poor@example.com", groups=[], full_name="Poor User")
 
-    mock_redis = MagicMock()
+    mock_redis = AsyncMock()
     # Simulate Budget Limit Hit:
     # Lua script returns [0 (failed), current_balance, 0]
     # We simulate current balance = 10.0, limit = 10.0, cost = 1.0 -> 11.0 > 10.0
