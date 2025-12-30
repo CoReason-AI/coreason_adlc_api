@@ -26,6 +26,9 @@ spacy = "^3.8.11"
 redis = "^7.1.0"
 httpx = "^0.28.1"
 keyring = "^24.0.0"
+alembic = "^1.17.2"
+sqlalchemy = "^2.0.45"
+psycopg2-binary = "^2.9.11"
 
 [tool.poetry.group.dev.dependencies]
 types-redis = "^4.6.0.20241004"
