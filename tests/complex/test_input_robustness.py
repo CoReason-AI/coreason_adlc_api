@@ -56,7 +56,14 @@ async def test_chat_huge_payload(mock_auth_header: str) -> None:
     }
 
     # Mock dependencies to isolate middleware processing
-    mock_response = {"choices": [{"message": {"content": "Processed"}}]}
+    mock_response = {
+        "id": "chatcmpl-robust",
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "gpt-4",
+        "choices": [{"message": {"content": "Processed"}}],
+        "usage": {"total_tokens": 10},
+    }
 
     # Removing the mock for scrub_pii_payload to test real behavior
     # Assuming Presidio can handle 2MB within the timeout, or we accept the slowness.
@@ -64,12 +71,12 @@ async def test_chat_huge_payload(mock_auth_header: str) -> None:
     # is to verify it doesn't crash.
 
     with (
-        patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
-        patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", return_value=mock_response),
-        patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()) as mock_log,
-        patch("coreason_adlc_api.routers.interceptor.litellm.token_counter", return_value=100),
+        patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
+        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value=mock_response),
+        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=100),
         patch(
-            "coreason_adlc_api.routers.interceptor.litellm.model_cost",
+            "coreason_adlc_api.middleware.proxy.litellm.model_cost",
             {"gpt-4": {"input_cost_per_token": 0, "output_cost_per_token": 0}},
         ),
     ):
@@ -117,12 +124,19 @@ async def test_chat_deeply_nested_json(mock_auth_header: str) -> None:
     }
 
     with (
-        patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
-        patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", return_value={"choices": []}),
-        patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()),
-        patch("coreason_adlc_api.routers.interceptor.litellm.token_counter", return_value=100),
+        patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
+        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value={
+            "id": "chatcmpl-nested",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": "gpt-4",
+            "choices": [],
+            "usage": {"total_tokens": 10},
+        }),
+        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()),
+        patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=100),
         patch(
-            "coreason_adlc_api.routers.interceptor.litellm.model_cost",
+            "coreason_adlc_api.middleware.proxy.litellm.model_cost",
             {"gpt-4": {"input_cost_per_token": 0, "output_cost_per_token": 0}},
         ),
     ):
@@ -150,16 +164,23 @@ async def test_chat_zalgo_text(mock_auth_header: str) -> None:
         "auc_id": "project-robustness",
     }
 
-    mock_response = {"choices": [{"message": {"content": "Zalgo Processed"}}]}
+    mock_response = {
+        "id": "chatcmpl-zalgo",
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "gpt-4",
+        "choices": [{"message": {"content": "Zalgo Processed"}}],
+        "usage": {"total_tokens": 10},
+    }
 
     # Do not mock scrub_pii_payload, we want to test real processing
     with (
-        patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
-        patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", return_value=mock_response),
-        patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()) as mock_log,
-        patch("coreason_adlc_api.routers.interceptor.litellm.token_counter", return_value=100),
+        patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
+        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value=mock_response),
+        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=100),
         patch(
-            "coreason_adlc_api.routers.interceptor.litellm.model_cost",
+            "coreason_adlc_api.middleware.proxy.litellm.model_cost",
             {"gpt-4": {"input_cost_per_token": 0, "output_cost_per_token": 0}},
         ),
     ):

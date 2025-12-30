@@ -31,16 +31,22 @@ async def test_long_running_request_completes_after_expiry(mock_oidc_factory: An
     async def slow_proxy_response(*args: Any, **kwargs: Any) -> Dict[str, Any]:
         await asyncio.sleep(2.5)
         return {
+            "id": "chatcmpl-expiry",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": "gpt-4",
             "choices": [{"message": {"content": "I survived time travel!"}}],
             "usage": {"total_tokens": 10},
         }
 
     # We need to mock the budget check to pass, and the proxy to be slow
     with (
-        patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
-        patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", side_effect=slow_proxy_response),
+        patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
+        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", side_effect=slow_proxy_response),
         # Mock telemetry to avoid DB calls
-        patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()),
+        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()),
+        # Mock cost estimation
+        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.estimate_request_cost", return_value=0.01),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             # Generate token with short expiry

@@ -40,7 +40,7 @@ async def test_chat_budget_exceeded(mock_auth_header: str) -> None:
     We mock check_budget_guardrail to raise HTTPException(402).
     """
     with patch(
-        "coreason_adlc_api.routers.interceptor.check_budget_guardrail",
+        "coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail",
         side_effect=HTTPException(status_code=402, detail="Budget exceeded"),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -62,9 +62,9 @@ async def test_chat_upstream_failure(mock_auth_header: str) -> None:
     Test that the API returns 500 (or propagates exception) when the proxy fails.
     """
     with (
-        patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
+        patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
         patch(
-            "coreason_adlc_api.routers.interceptor.execute_inference_proxy",
+            "coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference",
             side_effect=Exception("Upstream Service Down"),
         ),
     ):
@@ -84,12 +84,20 @@ async def test_chat_pii_edge_cases(mock_auth_header: str) -> None:
     Test input with weird PII strings.
     Mock proxy and telemetry to verify everything runs without crashing.
     """
-    mock_proxy_resp = {"choices": [{"message": {"content": "Hello there"}}]}
+    mock_proxy_resp = {
+        "id": "chatcmpl-pii",
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "gpt-4",
+        "choices": [{"message": {"content": "Hello there"}}],
+        "usage": {"total_tokens": 10},
+    }
 
     with (
-        patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
-        patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", return_value=mock_proxy_resp),
-        patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
+        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value=mock_proxy_resp),
+        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.estimate_request_cost", return_value=0.01),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             # 1. PII Only input
@@ -126,7 +134,7 @@ async def test_chat_invalid_input(mock_auth_header: str) -> None:
         }
 
         with patch(
-            "coreason_adlc_api.routers.interceptor.check_budget_guardrail", side_effect=ValueError("Negative cost")
+            "coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", side_effect=ValueError("Negative cost")
         ):
             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
             assert resp.status_code == 500
