@@ -2,7 +2,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
-from alembic import context  # type: ignore
+from alembic import context
 from coreason_adlc_api.config import settings
 
 # this is the Alembic Config object, which provides
