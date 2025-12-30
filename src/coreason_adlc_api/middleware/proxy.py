@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import asyncio
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 import litellm
 from fastapi import HTTPException, status

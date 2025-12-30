@@ -9,11 +9,9 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import time
-from typing import Any, Dict, List, Optional, cast
 
 import litellm
 from fastapi import APIRouter, BackgroundTasks, Depends
-from pydantic import BaseModel
 
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from coreason_adlc_api.middleware.budget import BudgetService

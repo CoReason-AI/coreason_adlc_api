@@ -10,7 +10,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ChatMessage(BaseModel):
@@ -46,6 +46,7 @@ class ChatCompletionResponse(BaseModel):
     but we could lock this down further if needed.
     For now, we just ensure it's a valid dict.
     """
+
     # In reality, this mirrors the OpenAI Choice/Usage structure.
     # We can leave it open or define it fully.
     # Given the 'Best Practices' requirement, let's keep it flexible but explicit.

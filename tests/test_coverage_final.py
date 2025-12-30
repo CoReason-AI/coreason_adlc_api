@@ -16,8 +16,8 @@ from fastapi import HTTPException
 
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.middleware.proxy import (
-    _breakers,
     InferenceProxyService,
+    _breakers,
 )
 
 

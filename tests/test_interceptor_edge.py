@@ -95,8 +95,12 @@ async def test_chat_pii_edge_cases(mock_auth_header: str) -> None:
 
     with (
         patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
-        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value=mock_proxy_resp),
-        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch(
+            "coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value=mock_proxy_resp
+        ),
+        patch(
+            "coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()
+        ) as mock_log,
         patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.estimate_request_cost", return_value=0.01),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -134,7 +138,8 @@ async def test_chat_invalid_input(mock_auth_header: str) -> None:
         }
 
         with patch(
-            "coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", side_effect=ValueError("Negative cost")
+            "coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail",
+            side_effect=ValueError("Negative cost"),
         ):
             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
             assert resp.status_code == 500

@@ -42,7 +42,10 @@ async def test_long_running_request_completes_after_expiry(mock_oidc_factory: An
     # We need to mock the budget check to pass, and the proxy to be slow
     with (
         patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
-        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", side_effect=slow_proxy_response),
+        patch(
+            "coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference",
+            side_effect=slow_proxy_response,
+        ),
         # Mock telemetry to avoid DB calls
         patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()),
         # Mock cost estimation

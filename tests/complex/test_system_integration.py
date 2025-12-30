@@ -19,7 +19,8 @@ from coreason_adlc_api.auth.identity import UserIdentity
 from coreason_adlc_api.middleware.budget import BudgetService
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
 from coreason_adlc_api.middleware.telemetry import TelemetryService
-from coreason_adlc_api.routers.interceptor import ChatCompletionRequest, chat_completions
+from coreason_adlc_api.routers.interceptor import chat_completions
+from coreason_adlc_api.routers.schemas import ChatCompletionRequest, ChatMessage
 from coreason_adlc_api.routers.workbench import create_new_draft
 from coreason_adlc_api.workbench.schemas import DraftCreate
 
@@ -142,8 +143,10 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         ),
         # Patch cost estimation in proxy service if needed, OR mock litellm directly
         patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=10),
-        patch("coreason_adlc_api.middleware.proxy.litellm.model_cost", {"gpt-4": {"input_cost_per_token": 0.001, "output_cost_per_token": 0.002}}),
-
+        patch(
+            "coreason_adlc_api.middleware.proxy.litellm.model_cost",
+            {"gpt-4": {"input_cost_per_token": 0.001, "output_cost_per_token": 0.002}},
+        ),
         patch("coreason_adlc_api.routers.interceptor.litellm.completion_cost", return_value=0.03),  # Real cost calc
         # Patch PII Scrubbing - return coroutines
         patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
@@ -169,7 +172,7 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         # --- STEP 2: Interceptor - Chat Completion ---
         chat_req = ChatCompletionRequest(
             model=model_name,
-            messages=[{"role": "user", "content": user_input_text}],
+            messages=[ChatMessage(role="user", content=user_input_text)],
             auc_id=auc_id,
             estimated_cost=0.01,
         )
@@ -254,7 +257,7 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
         patch("coreason_adlc_api.middleware.budget.settings.DAILY_BUDGET_LIMIT", 10.0),
     ):
         req = ChatCompletionRequest(
-            model="gpt-4", messages=[{"role": "user", "content": "hi"}], auc_id=auc_id, estimated_cost=1.0
+            model="gpt-4", messages=[ChatMessage(role="user", content="hi")], auc_id=auc_id, estimated_cost=1.0
         )
 
         bg_tasks = BackgroundTasks()

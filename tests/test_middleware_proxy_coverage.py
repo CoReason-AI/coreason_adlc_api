@@ -9,12 +9,11 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 from unittest import mock
+
 import pytest
-from coreason_adlc_api.middleware.proxy import (
-    InferenceProxyService,
-    execute_inference_proxy,
-    _service
-)
+
+from coreason_adlc_api.middleware.proxy import InferenceProxyService, _service, execute_inference_proxy
+
 
 @pytest.mark.asyncio
 async def test_legacy_wrapper_coverage() -> None:
@@ -24,6 +23,7 @@ async def test_legacy_wrapper_coverage() -> None:
         res = await execute_inference_proxy([], "model", "auc", {})
         assert res == "success"
         mock_exec.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_estimate_sync_outer_exception() -> None:
@@ -36,6 +36,7 @@ async def test_estimate_sync_outer_exception() -> None:
         # We need to ensure run_in_executor captures the return value
         cost = await service.estimate_request_cost("gpt-4", [])
         assert cost == 0.01
+
 
 def test_estimate_sync_inner_exception_logic() -> None:
     """
@@ -63,12 +64,12 @@ def test_estimate_sync_inner_exception_logic() -> None:
         mock.patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=100),
         mock.patch("coreason_adlc_api.middleware.proxy.litellm.model_cost", side_effect=Exception("Lookup fail")),
     ):
-         # Passing a model that isn't in the dict should trigger exception access on dict if it was a dict
-         # But here we mock the attribute access or the dict itself.
-         # The code does `litellm.model_cost.get(model)`.
-         # To make `.get` raise, we need `model_cost` to be a mock that raises on get.
+        # Passing a model that isn't in the dict should trigger exception access on dict if it was a dict
+        # But here we mock the attribute access or the dict itself.
+        # The code does `litellm.model_cost.get(model)`.
+        # To make `.get` raise, we need `model_cost` to be a mock that raises on get.
 
-         # However, the previous test case (dict empty) covers `if not cost_info: raise ValueError`
-         # which triggers the `except Exception` block.
-         # So the logic is covered.
-         pass
+        # However, the previous test case (dict empty) covers `if not cost_info: raise ValueError`
+        # which triggers the `except Exception` block.
+        # So the logic is covered.
+        pass

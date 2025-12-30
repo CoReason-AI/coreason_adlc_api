@@ -73,7 +73,9 @@ async def test_chat_huge_payload(mock_auth_header: str) -> None:
     with (
         patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
         patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value=mock_response),
-        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch(
+            "coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()
+        ) as mock_log,
         patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=100),
         patch(
             "coreason_adlc_api.middleware.proxy.litellm.model_cost",
@@ -125,14 +127,17 @@ async def test_chat_deeply_nested_json(mock_auth_header: str) -> None:
 
     with (
         patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
-        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value={
-            "id": "chatcmpl-nested",
-            "object": "chat.completion",
-            "created": 1234567890,
-            "model": "gpt-4",
-            "choices": [],
-            "usage": {"total_tokens": 10},
-        }),
+        patch(
+            "coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference",
+            return_value={
+                "id": "chatcmpl-nested",
+                "object": "chat.completion",
+                "created": 1234567890,
+                "model": "gpt-4",
+                "choices": [],
+                "usage": {"total_tokens": 10},
+            },
+        ),
         patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()),
         patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=100),
         patch(
@@ -177,7 +182,9 @@ async def test_chat_zalgo_text(mock_auth_header: str) -> None:
     with (
         patch("coreason_adlc_api.middleware.budget.BudgetService.check_budget_guardrail", return_value=True),
         patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value=mock_response),
-        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch(
+            "coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()
+        ) as mock_log,
         patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=100),
         patch(
             "coreason_adlc_api.middleware.proxy.litellm.model_cost",

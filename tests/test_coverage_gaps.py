@@ -68,7 +68,11 @@ def test_interceptor_malformed_response(mock_user_identity: Any) -> None:
             # We need to provide minimal fields to pass Pydantic validation of ChatCompletionResponse
             # OR we rely on Pydantic to filter/ignore extras, but if required fields are missing it will fail 500.
             # The schema has: id, object, created, model, choices.
-            "id": "err", "object": "err", "created": 0, "model": "err", "choices": []
+            "id": "err",
+            "object": "err",
+            "created": 0,
+            "model": "err",
+            "choices": [],
         }
         mock_scrub.return_value = "scrubbed"
 

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 
-from coreason_adlc_api.middleware.proxy import _breakers, InferenceProxyService
+from coreason_adlc_api.middleware.proxy import InferenceProxyService, _breakers
 
 
 @pytest.mark.asyncio
@@ -22,7 +22,9 @@ async def test_circuit_breaker_isolation() -> None:
     # but self.get_provider_for_model calls litellm.get_llm_provider, so we patch litellm.
 
     with (
-        patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.get_api_key_for_model", new_callable=AsyncMock) as mock_get_key,
+        patch(
+            "coreason_adlc_api.middleware.proxy.InferenceProxyService.get_api_key_for_model", new_callable=AsyncMock
+        ) as mock_get_key,
         patch("coreason_adlc_api.middleware.proxy.litellm.acompletion", new_callable=AsyncMock) as mock_acompletion,
         patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider,
     ):

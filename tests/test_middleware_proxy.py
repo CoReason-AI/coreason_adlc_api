@@ -76,9 +76,7 @@ async def test_proxy_success(
 
 
 @pytest.mark.asyncio
-async def test_proxy_missing_key(
-    proxy_service: InferenceProxyService, mock_db_pool: Any, mock_litellm: Any
-) -> None:
+async def test_proxy_missing_key(proxy_service: InferenceProxyService, mock_db_pool: Any, mock_litellm: Any) -> None:
     """Test 404 when key not found."""
     mock_db_pool.fetchrow.return_value = None
 
