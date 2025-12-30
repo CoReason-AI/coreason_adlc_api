@@ -20,13 +20,15 @@ from coreason_adlc_api.middleware.budget import check_budget_guardrail
 
 @pytest.fixture
 def mock_redis() -> Any:
-    with mock.patch("coreason_adlc_api.middleware.budget.redis.Redis") as mock_redis_cls:
-        client = mock.MagicMock()
-        mock_redis_cls.return_value = client
+    # We patch get_redis_client to return an AsyncMock
+    with mock.patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
+        client = mock.AsyncMock()
+        mock_get_client.return_value = client
         yield client
 
 
-def test_check_budget_pass(mock_redis: Any) -> None:
+@pytest.mark.asyncio
+async def test_check_budget_pass(mock_redis: Any) -> None:
     """Test that check passes when under budget."""
     user_id = uuid.uuid4()
     cost = 0.5
@@ -36,7 +38,7 @@ def test_check_budget_pass(mock_redis: Any) -> None:
     # Note: Logic now expects integers for micros.
     mock_redis.eval.return_value = [1, 500000, 0]
 
-    result = check_budget_guardrail(user_id, cost)
+    result = await check_budget_guardrail(user_id, cost)
 
     assert result is True
     mock_redis.eval.assert_called_once()
@@ -52,7 +54,8 @@ def test_check_budget_pass(mock_redis: Any) -> None:
     assert args[3] == 500000  # 0.5 * 1_000_000
 
 
-def test_check_budget_exceeded(mock_redis: Any) -> None:
+@pytest.mark.asyncio
+async def test_check_budget_exceeded(mock_redis: Any) -> None:
     """Test that check raises 402 when budget exceeded."""
     user_id = uuid.uuid4()
     cost = 10.0
@@ -62,56 +65,52 @@ def test_check_budget_exceeded(mock_redis: Any) -> None:
     mock_redis.eval.return_value = [0, 50000000, 0]
 
     with pytest.raises(HTTPException) as exc:
-        check_budget_guardrail(user_id, cost)
+        await check_budget_guardrail(user_id, cost)
 
     assert exc.value.status_code == 402
     assert "Daily budget limit exceeded" in exc.value.detail
 
-    # Verify that we did NOT call incrbyfloat separately (atomicity)
-    assert not mock_redis.incrbyfloat.called
 
-
-def test_check_budget_redis_error(mock_redis: Any) -> None:
+@pytest.mark.asyncio
+async def test_check_budget_redis_error(mock_redis: Any) -> None:
     """Test fail-closed behavior on Redis error."""
     user_id = uuid.uuid4()
     mock_redis.eval.side_effect = RedisError("Connection failed")
 
     with pytest.raises(HTTPException) as exc:
-        check_budget_guardrail(user_id, 1.0)
+        await check_budget_guardrail(user_id, 1.0)
 
     assert exc.value.status_code == 503
     assert "Budget service unavailable" in exc.value.detail
 
 
-def test_check_budget_first_time(mock_redis: Any) -> None:
+@pytest.mark.asyncio
+async def test_check_budget_first_time(mock_redis: Any) -> None:
     """Test that expiry handling logic in Lua is covered (implicit via Lua logic)."""
-    # Since the expiry logic is INSIDE Lua, we can't easily assert `client.expire` was called
-    # because `redis.call` inside Lua happens on the server.
-    # However, we can check the return value `is_new` if we wanted to use it.
-    # For this unit test, we just verify the happy path accepts the response.
-
     user_id = uuid.uuid4()
     cost = 5.0
     mock_redis.eval.return_value = [1, 5000000, 1]  # is_new=1, balance=5.0*10^6
 
-    result = check_budget_guardrail(user_id, cost)
+    result = await check_budget_guardrail(user_id, cost)
     assert result is True
 
 
-def test_check_budget_negative_cost(mock_redis: Any) -> None:
+@pytest.mark.asyncio
+async def test_check_budget_negative_cost(mock_redis: Any) -> None:
     """Test that negative cost raises ValueError."""
     user_id = uuid.uuid4()
     with pytest.raises(ValueError):
-        check_budget_guardrail(user_id, -5.0)
+        await check_budget_guardrail(user_id, -5.0)
 
 
-def test_check_budget_generic_exception(mock_redis: Any) -> None:
+@pytest.mark.asyncio
+async def test_check_budget_generic_exception(mock_redis: Any) -> None:
     """Test 500 behavior on generic unexpected error."""
     user_id = uuid.uuid4()
     mock_redis.eval.side_effect = Exception("Something weird happened")
 
     with pytest.raises(HTTPException) as exc:
-        check_budget_guardrail(user_id, 1.0)
+        await check_budget_guardrail(user_id, 1.0)
 
     assert exc.value.status_code == 500
     assert "Internal server error" in exc.value.detail

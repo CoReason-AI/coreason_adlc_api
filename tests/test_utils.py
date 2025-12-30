@@ -8,15 +8,40 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import httpx
+from unittest import mock
 
-from coreason_adlc_api.utils import get_http_client
+import httpx
+import redis.asyncio as redis
+
+from coreason_adlc_api.utils import get_http_client, get_redis_client
 
 
 def test_get_http_client_real() -> None:
     """Verify that the real get_http_client function returns an AsyncClient."""
     client = get_http_client()
     assert isinstance(client, httpx.AsyncClient)
-    # Cleanup (not strictly async here but good practice if we entered context)
-    # Since we just got the instance, garbage collection will close it eventually,
-    # or we can manually close if it was opened. AsyncClient constructor doesn't open net resources immediately.
+
+
+def test_get_redis_client_real_pool_creation() -> None:
+    """
+    Test that get_redis_client initializes the pool if None.
+    We mock redis.ConnectionPool to avoid actual network calls.
+    """
+    # Reset the global pool for the test
+    import coreason_adlc_api.utils
+
+    coreason_adlc_api.utils._redis_pool = None
+
+    with mock.patch("redis.asyncio.ConnectionPool") as mock_pool_cls:
+        mock_pool = mock.MagicMock()
+        mock_pool_cls.from_url.return_value = mock_pool
+
+        # First call: should create pool
+        client1 = get_redis_client()
+        assert isinstance(client1, redis.Redis)
+        mock_pool_cls.from_url.assert_called_once()
+
+        # Second call: should reuse pool (assert_called_once should remain true, count=1)
+        client2 = get_redis_client()
+        assert isinstance(client2, redis.Redis)
+        assert mock_pool_cls.from_url.call_count == 1

@@ -55,7 +55,7 @@ async def async_log_telemetry(
 
         client = get_redis_client()
         # RPUSH adds to the tail of the list
-        client.rpush("telemetry_queue", json.dumps(payload))
+        await client.rpush("telemetry_queue", json.dumps(payload))
 
     except Exception as e:
         # Fire-and-forget: we verify this in tests, but in prod we log and continue

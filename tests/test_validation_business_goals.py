@@ -34,7 +34,7 @@ except ImportError:
 @pytest.fixture
 def mock_redis() -> Generator[MagicMock, None, None]:
     with patch("coreason_adlc_api.middleware.budget.get_redis_client") as m:
-        client = MagicMock()
+        client = AsyncMock()
         m.return_value = client
         yield client
 
@@ -42,7 +42,7 @@ def mock_redis() -> Generator[MagicMock, None, None]:
 @pytest.fixture
 def mock_redis_telemetry() -> Generator[MagicMock, None, None]:
     with patch("coreason_adlc_api.middleware.telemetry.get_redis_client") as m:
-        client = MagicMock()
+        client = AsyncMock()
         m.return_value = client
         yield client
 
@@ -81,14 +81,14 @@ async def test_bg01_centralized_budget_control(mock_redis: MagicMock) -> None:
     # Redis eval returns [is_allowed, new_balance, is_new]
     # Allow 0.5 cost, resulting in 49.5 balance
     mock_redis.eval.return_value = [1, 49.5, 0]
-    assert check_budget_guardrail(user_id, 0.5) is True
+    assert await check_budget_guardrail(user_id, 0.5) is True
 
     # Scenario 2: Budget exceeded
     # Reject 1.0 cost because it exceeds limit. Return status 0.
     mock_redis.eval.return_value = [0, 50.5, 0]
 
     with pytest.raises(HTTPException) as exc:
-        check_budget_guardrail(user_id, 1.0)
+        await check_budget_guardrail(user_id, 1.0)
 
     assert exc.value.status_code == 402
     assert "limit exceeded" in exc.value.detail
@@ -110,7 +110,7 @@ async def test_bg02_toxic_telemetry_prevention(mock_redis_telemetry: MagicMock) 
 
     from coreason_adlc_api.middleware.pii import scrub_pii_payload
 
-    scrubbed_input = scrub_pii_payload(input_text)
+    scrubbed_input = await scrub_pii_payload(input_text)
 
     # Verify scrubbing logic first (isolated)
     assert "<REDACTED PHONE_NUMBER>" in scrubbed_input  # type: ignore

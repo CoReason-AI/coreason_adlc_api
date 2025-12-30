@@ -11,7 +11,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-import redis
+import redis.asyncio as redis
 from fastapi import HTTPException, status
 from loguru import logger
 
@@ -52,7 +52,7 @@ return {1, new_balance_micros, is_new}
 """
 
 
-def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
+async def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
     """
     Checks if the user has enough budget for the estimated cost.
     Raises HTTPException(402) if budget is exceeded.
@@ -78,7 +78,7 @@ def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
     try:
         # Execute Lua Script
         # Result: [is_allowed (int), new_balance_micros (int), is_new (int)]
-        result = client.eval(  # type: ignore[no-untyped-call]
+        result = await client.eval(  # type: ignore[no-untyped-call]
             BUDGET_LUA_SCRIPT,
             1,  # numkeys
             key,
@@ -121,7 +121,7 @@ def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
         ) from e
 
 
-def check_budget_status(user_id: UUID) -> bool:
+async def check_budget_status(user_id: UUID) -> bool:
     """
     Read-only check if the user has exceeded their daily budget.
     Returns True if valid (under limit), False if limit reached.
@@ -131,7 +131,7 @@ def check_budget_status(user_id: UUID) -> bool:
     key = f"budget:{today}:{user_id}"
 
     try:
-        current_spend_micros = client.get(key)
+        current_spend_micros = await client.get(key)
         if current_spend_micros is None:
             return True
 

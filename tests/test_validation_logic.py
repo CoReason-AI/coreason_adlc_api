@@ -1,7 +1,8 @@
 from typing import Any, Callable
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from coreason_adlc_api.app import app
@@ -10,97 +11,99 @@ from coreason_adlc_api.middleware.pii import scrub_pii_recursive
 
 
 # Test PII Recursion
-def test_scrub_pii_recursive_dict() -> None:
+@pytest.mark.asyncio
+async def test_scrub_pii_recursive_dict() -> None:
     data = {"key1": "John Doe", "nested": {"key2": "john.doe@example.com", "safe": "Nothing here"}}
 
-    # We mock scrub_pii_payload to simulate PII detection
-    with patch("coreason_adlc_api.middleware.pii.scrub_pii_payload") as mock_scrub:
+    # We mock scrub_pii_payload to simulate PII detection (needs to be awaitable)
+    async def side_effect(val: str | None) -> str | None:
+        if val and "John Doe" in val:
+            return "<REDACTED PERSON>"
+        if val and "john.doe@example.com" in val:
+            return "<REDACTED EMAIL>"
+        return val
 
-        def side_effect(val: str) -> str:
-            if "John Doe" in val:
-                return "<REDACTED PERSON>"
-            if "john.doe@example.com" in val:
-                return "<REDACTED EMAIL>"
-            return val
-
-        mock_scrub.side_effect = side_effect
-
-        scrubbed = scrub_pii_recursive(data)
+    with patch("coreason_adlc_api.middleware.pii.scrub_pii_payload", side_effect=side_effect):
+        scrubbed = await scrub_pii_recursive(data)
 
         assert scrubbed["key1"] == "<REDACTED PERSON>"
         assert scrubbed["nested"]["key2"] == "<REDACTED EMAIL>"
         assert scrubbed["nested"]["safe"] == "Nothing here"
 
 
-def test_scrub_pii_recursive_list() -> None:
+@pytest.mark.asyncio
+async def test_scrub_pii_recursive_list() -> None:
     data = ["John Doe", "Safe"]
-    with patch("coreason_adlc_api.middleware.pii.scrub_pii_payload") as mock_scrub:
-        mock_scrub.side_effect = lambda x: "<REDACTED PERSON>" if "John" in x else x
 
-        scrubbed = scrub_pii_recursive(data)
+    async def side_effect(val: str | None) -> str | None:
+        if val and "John" in val:
+            return "<REDACTED PERSON>"
+        return val
+
+    with patch("coreason_adlc_api.middleware.pii.scrub_pii_payload", side_effect=side_effect):
+        scrubbed = await scrub_pii_recursive(data)
         assert scrubbed[0] == "<REDACTED PERSON>"
         assert scrubbed[1] == "Safe"
 
 
-def test_scrub_pii_recursive_primitive() -> None:
+@pytest.mark.asyncio
+async def test_scrub_pii_recursive_primitive() -> None:
     """Test recursion on a primitive type (int) to cover the 'else' branch."""
     data = 12345
-    scrubbed = scrub_pii_recursive(data)
+    scrubbed = await scrub_pii_recursive(data)
     assert scrubbed == 12345
 
 
 # Test Budget Check Status
-def test_check_budget_status_under_limit() -> None:
+@pytest.mark.asyncio
+async def test_check_budget_status_under_limit() -> None:
     user_id = uuid4()
     with patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
-        mock_redis = MagicMock()
+        mock_redis = AsyncMock()
         mock_get_client.return_value = mock_redis
 
         # Scenario: Spend is 10.0 (micros = 10,000,000), limit is 50.0 (50,000,000)
         mock_redis.get.return_value = b"10000000"
 
-        assert check_budget_status(user_id) is True
+        assert await check_budget_status(user_id) is True
 
 
-def test_check_budget_status_over_limit() -> None:
+@pytest.mark.asyncio
+async def test_check_budget_status_over_limit() -> None:
     user_id = uuid4()
     with patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
-        mock_redis = MagicMock()
+        mock_redis = AsyncMock()
         mock_get_client.return_value = mock_redis
 
         # Scenario: Spend is 60.0 (micros = 60,000,000)
         mock_redis.get.return_value = b"60000000"
 
-        assert check_budget_status(user_id) is False
+        assert await check_budget_status(user_id) is False
 
 
-def test_check_budget_status_no_key() -> None:
+@pytest.mark.asyncio
+async def test_check_budget_status_no_key() -> None:
     user_id = uuid4()
     with patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
-        mock_redis = MagicMock()
+        mock_redis = AsyncMock()
         mock_get_client.return_value = mock_redis
 
         mock_redis.get.return_value = None
 
-        assert check_budget_status(user_id) is True
+        assert await check_budget_status(user_id) is True
 
 
-def test_check_budget_status_error() -> None:
+@pytest.mark.asyncio
+async def test_check_budget_status_error() -> None:
     user_id = uuid4()
     with patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
         # We need the client call to succeed but the client.get to raise
-        mock_redis = MagicMock()
+        mock_redis = AsyncMock()
         mock_get_client.return_value = mock_redis
         mock_redis.get.side_effect = Exception("Redis Down")
 
         # Fail closed -> False
-        assert check_budget_status(user_id) is False
-
-
-# Test Router Endpoint Logic (Unit level via Router function calls if possible, or Client)
-# We can test the validate_draft function in the client, but that requires a running app or full mock.
-# Easier to test the logic by mocking the components used in the router.
-# But since we added an endpoint, let's verify via client by mocking httpx.
+        assert await check_budget_status(user_id) is False
 
 
 def test_client_validate_draft() -> None:
@@ -132,16 +135,14 @@ def test_workbench_validate_endpoint_integration(mock_oidc_factory: Callable[[di
 
     # Mock the internal logic checks
     with (
-        patch("coreason_adlc_api.routers.workbench.check_budget_status") as mock_budget,
-        patch("coreason_adlc_api.routers.workbench.scrub_pii_recursive") as mock_pii,
+        patch("coreason_adlc_api.routers.workbench.check_budget_status", new_callable=AsyncMock) as mock_budget,
+        patch("coreason_adlc_api.routers.workbench.scrub_pii_recursive", new_callable=AsyncMock) as mock_pii,
     ):
         # Scenario 1: All Valid
         mock_budget.return_value = True
         mock_pii.return_value = draft_payload["oas_content"]  # No change -> No PII
 
         resp = client.post("/api/v1/workbench/validate", json=draft_payload, headers=headers)
-        # Note: Depending on router registration, prefix might be /api/v1/workbench or just /workbench
-        # Memory says "/api/v1" prefix.
 
         assert resp.status_code == 200
         data = resp.json()
