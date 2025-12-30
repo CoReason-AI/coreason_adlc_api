@@ -12,7 +12,7 @@ import time
 from typing import Any, Dict, List, Optional, cast
 
 import litellm
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
@@ -39,9 +39,51 @@ class ChatCompletionRequest(BaseModel):
     estimated_cost: float = 0.01
 
 
+def estimate_request_cost(model: str, messages: List[Dict[str, Any]]) -> float:
+    """
+    Estimates the cost of the request using LiteLLM's token counter and cost map.
+    Assumes a default output buffer since we can't know response length yet.
+    """
+    try:
+        # 1. Count Input Tokens
+        input_tokens = litellm.token_counter(model=model, messages=messages)
+
+        # 2. Get Model Cost Info
+        # litellm.model_cost is a dict of model_name -> cost_dict
+        # We need to handle aliases or lookup failures safely
+        try:
+            cost_info = litellm.model_cost.get(model)
+            # Fallback for exact match failure (litellm usually handles this but accessing dict directly might fail)
+            if not cost_info:
+                # Try to force a lookup if possible, or fallback
+                # For now, we'll assume if it's not in the map, we use default
+                raise ValueError("Model cost not found")
+
+            input_cost_per_token = float(cost_info.get("input_cost_per_token", 0.0))
+            output_cost_per_token = float(cost_info.get("output_cost_per_token", 0.0))
+        except Exception:
+            # Fallback defaults (approximate to GPT-3.5 levels if unknown)
+            input_cost_per_token = 0.0000005
+            output_cost_per_token = 0.0000015
+
+        # 3. Estimate Output Tokens (Conservative Buffer)
+        # We don't know how many tokens the model will generate.
+        # Let's assume a safe buffer, e.g., 500 tokens.
+        estimated_output_tokens = 500
+
+        # cast(float, ...) to ensure mypy knows it's a float, as input_tokens comes from untyped lib
+        total_cost = (float(input_tokens) * input_cost_per_token) + (estimated_output_tokens * output_cost_per_token)
+        return total_cost
+
+    except Exception:
+        # Fallback to a safe default if estimation fails completely
+        return 0.01
+
+
 @router.post("/completions")
 async def chat_completions(
     request: ChatCompletionRequest,
+    background_tasks: BackgroundTasks,
     user: UserIdentity = Depends(parse_and_validate_token),
 ) -> Dict[str, Any]:
     """
@@ -50,8 +92,12 @@ async def chat_completions(
     start_time = time.time()
 
     # 1. Budget Gatekeeper
+    # We ignore the client's estimated_cost for the blocking check to prevent bypass.
+    # Instead, we calculate it server-side.
+    server_estimated_cost = estimate_request_cost(request.model, request.messages)
+
     # This is blocking.
-    check_budget_guardrail(user.oid, request.estimated_cost)
+    check_budget_guardrail(user.oid, server_estimated_cost)
 
     # 2. PII Scrubbing (Input)
     # Spec says: "The API must pass the raw request_payload... to Presidio."
@@ -116,7 +162,8 @@ async def chat_completions(
     except Exception:
         pass  # Fallback to estimate if calculation fails
 
-    await async_log_telemetry(
+    background_tasks.add_task(
+        async_log_telemetry,
         user_id=user.oid,
         auc_id=request.auc_id,
         model_name=request.model,

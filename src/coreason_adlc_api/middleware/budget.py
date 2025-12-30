@@ -24,23 +24,22 @@ from coreason_adlc_api.utils import get_redis_client
 # Returns: [is_allowed (1/0), new_balance, is_new_key (1/0)]
 BUDGET_LUA_SCRIPT = """
 local key = KEYS[1]
-local cost = tonumber(ARGV[1])
-local limit = tonumber(ARGV[2])
+local cost_micros = tonumber(ARGV[1])
+local limit_micros = tonumber(ARGV[2])
 local expiry = tonumber(ARGV[3])
 
-local current = tonumber(redis.call('GET', key) or "0")
+local current_micros = tonumber(redis.call('GET', key) or "0")
 
-if current + cost > limit then
-    return {0, current, 0}
+if current_micros + cost_micros > limit_micros then
+    return {0, current_micros, 0}
 end
 
-local new_balance = redis.call('INCRBYFLOAT', key, cost)
+local new_balance_micros = redis.call('INCRBY', key, cost_micros)
 local is_new = 0
 
 -- Check if this is the first write (roughly, if balance == cost)
--- Or we can check TTL. But INCRBYFLOAT doesn't reset TTL.
+-- Or we can check TTL. But INCRBY doesn't reset TTL.
 -- If new_balance is exactly cost, it was 0 before (or expired).
--- But float equality can be tricky. Let's rely on PTTL.
 local ttl = redis.call('PTTL', key)
 
 if ttl == -1 then
@@ -49,7 +48,7 @@ if ttl == -1 then
     is_new = 1
 end
 
-return {1, new_balance, is_new}
+return {1, new_balance_micros, is_new}
 """
 
 
@@ -72,21 +71,25 @@ def check_budget_guardrail(user_id: UUID, estimated_cost: float) -> bool:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     key = f"budget:{today}:{user_id}"
 
+    # Convert to micros (integers)
+    cost_micros = int(estimated_cost * 1_000_000)
+    limit_micros = int(settings.DAILY_BUDGET_LIMIT * 1_000_000)
+
     try:
         # Execute Lua Script
-        # Result: [is_allowed (int), new_balance (float/str), is_new (int)]
+        # Result: [is_allowed (int), new_balance_micros (int), is_new (int)]
         result = client.eval(  # type: ignore[no-untyped-call]
             BUDGET_LUA_SCRIPT,
             1,  # numkeys
             key,
-            estimated_cost,
-            settings.DAILY_BUDGET_LIMIT,
+            cost_micros,
+            limit_micros,
             172800,  # 2 days expiry
         )
 
         # Redis might return ints as ints, floats as strings or floats depending on client version/decoding.
         is_allowed = int(result[0])
-        _new_balance = float(result[1])
+        _new_balance_micros = int(result[1])
 
         if not is_allowed:
             logger.warning(
@@ -128,11 +131,15 @@ def check_budget_status(user_id: UUID) -> bool:
     key = f"budget:{today}:{user_id}"
 
     try:
-        current_spend = client.get(key)
-        if current_spend is None:
+        current_spend_micros = client.get(key)
+        if current_spend_micros is None:
             return True
 
-        return float(current_spend) < settings.DAILY_BUDGET_LIMIT
+        # Stored as micros (int)
+        current_spend_micros_int = int(current_spend_micros)
+        limit_micros = int(settings.DAILY_BUDGET_LIMIT * 1_000_000)
+
+        return current_spend_micros_int < limit_micros
 
     except (redis.RedisError, ValueError, TypeError, Exception) as e:
         logger.error(f"Error checking budget status: {e}")

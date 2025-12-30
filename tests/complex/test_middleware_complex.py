@@ -51,7 +51,7 @@ async def test_budget_concurrency_race() -> None:
     # Lock for thread-safe updates to current_spend in the mock
     # lock = asyncio.Lock()
 
-    def eval_side_effect(script: str, numkeys: int, key: str, cost: float, limit: float, expiry: int) -> list[Any]:
+    def eval_side_effect(script: str, numkeys: int, key: str, cost: int, limit: int, expiry: int) -> list[Any]:
         nonlocal current_spend
         # Simulate atomic script execution
         # Note: In real Redis, this is atomic. Here we use a simple variable.
@@ -97,7 +97,8 @@ async def test_budget_concurrency_race() -> None:
         assert len(failures) == 1
 
         # Verify final spend
-        assert current_spend == 50.0
+        # 50.0 USD in micros = 50_000_000
+        assert current_spend == 50_000_000
 
 
 # --- Circuit Breaker Complex Test ---

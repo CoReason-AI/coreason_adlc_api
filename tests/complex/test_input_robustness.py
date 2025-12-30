@@ -67,6 +67,11 @@ async def test_chat_huge_payload(mock_auth_header: str) -> None:
         patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
         patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", return_value=mock_response),
         patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch("coreason_adlc_api.routers.interceptor.litellm.token_counter", return_value=100),
+        patch(
+            "coreason_adlc_api.routers.interceptor.litellm.model_cost",
+            {"gpt-4": {"input_cost_per_token": 0, "output_cost_per_token": 0}},
+        ),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post(
@@ -115,6 +120,11 @@ async def test_chat_deeply_nested_json(mock_auth_header: str) -> None:
         patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
         patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", return_value={"choices": []}),
         patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()),
+        patch("coreason_adlc_api.routers.interceptor.litellm.token_counter", return_value=100),
+        patch(
+            "coreason_adlc_api.routers.interceptor.litellm.model_cost",
+            {"gpt-4": {"input_cost_per_token": 0, "output_cost_per_token": 0}},
+        ),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             try:
@@ -147,6 +157,11 @@ async def test_chat_zalgo_text(mock_auth_header: str) -> None:
         patch("coreason_adlc_api.routers.interceptor.check_budget_guardrail", return_value=True),
         patch("coreason_adlc_api.routers.interceptor.execute_inference_proxy", return_value=mock_response),
         patch("coreason_adlc_api.routers.interceptor.async_log_telemetry", new=AsyncMock()) as mock_log,
+        patch("coreason_adlc_api.routers.interceptor.litellm.token_counter", return_value=100),
+        patch(
+            "coreason_adlc_api.routers.interceptor.litellm.model_cost",
+            {"gpt-4": {"input_cost_per_token": 0, "output_cost_per_token": 0}},
+        ),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
