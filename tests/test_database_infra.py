@@ -83,7 +83,7 @@ async def test_get_db_rollback_on_error() -> None:
 
     with patch("coreason_adlc_api.dependencies.async_session_factory", return_value=mock_factory_instance):
         gen = get_db()
-        session = await anext(gen)
+        _ = await anext(gen)
 
         # Raise an exception inside the usage block
         with pytest.raises(ValueError):
