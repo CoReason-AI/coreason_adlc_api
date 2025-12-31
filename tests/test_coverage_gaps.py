@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Result
 
 from coreason_adlc_api.app import app
-from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
+from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
 from coreason_adlc_api.dependencies import get_db
 from coreason_adlc_api.middleware.circuit_breaker import CircuitBreakerOpenError
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
@@ -54,6 +54,13 @@ async def test_identity_expired_token(mock_db_session: AsyncMock) -> None:
             with pytest.raises(HTTPException) as exc:
                 await parse_and_validate_token(header, session=mock_db_session)
             assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_map_groups_to_projects_empty(mock_db_session: AsyncMock) -> None:
+    """Test map_groups_to_projects with empty group list."""
+    res = await map_groups_to_projects(mock_db_session, [])
+    assert res == []
 
 
 # --- Proxy Tests ---

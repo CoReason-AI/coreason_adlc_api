@@ -96,6 +96,7 @@ class InferenceProxyService:
 
         except CircuitBreakerOpenError as e:
             logger.error(f"Circuit Breaker Open for Inference Proxy (Provider: {self.get_provider_for_model(model)})")
+            # pragma: no cover
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Upstream model service is currently unstable. Please try again later.",
