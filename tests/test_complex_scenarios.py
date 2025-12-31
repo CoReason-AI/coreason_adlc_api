@@ -140,7 +140,7 @@ async def test_update_on_deleted_draft(mock_db_session: AsyncMock) -> None:
     #    If check_status returns row with status DRAFT it passes.
     #    Then UPDATE returns nothing.
 
-    def execute_side_effect(stmt, params=None):
+    def execute_side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
         mock_res = MagicMock(spec=Result)
 
