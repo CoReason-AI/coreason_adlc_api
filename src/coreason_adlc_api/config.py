@@ -8,6 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+from typing import Any, Dict
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,6 +58,18 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+
+    @property
+    def redis_settings(self) -> Dict[str, Any]:
+        """
+        Returns redis settings as a dictionary for arq.
+        """
+        return {
+            "host": self.REDIS_HOST,
+            "port": self.REDIS_PORT,
+            "database": self.REDIS_DB,
+            "password": self.REDIS_PASSWORD,
+        }
 
 
 # Global Settings Instance

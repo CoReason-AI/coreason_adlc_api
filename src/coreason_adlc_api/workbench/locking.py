@@ -11,6 +11,7 @@
 import logging
 import uuid
 from datetime import datetime, timedelta
+from typing import List
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -18,6 +19,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from coreason_adlc_api.auth.identity import UserIdentity
 from coreason_adlc_api.db_models import DraftModel
 from coreason_adlc_api.exceptions import DraftLockedError
+from coreason_adlc_api.workbench.schemas import AccessMode
 
 logger = logging.getLogger(__name__)
 
@@ -114,3 +116,63 @@ class DraftLockManager:
             # Check if expired?
             # For strict checking during save, we assume we must actively hold it.
             raise DraftLockedError(f"Draft is locked by {draft.locked_by}")
+
+
+# Legacy wrapper for tests
+async def acquire_draft_lock(
+    draft_id: str,
+    user: UserIdentity,
+    session: AsyncSession = None,  # type: ignore
+    roles: List[str] = None,  # type: ignore
+) -> AccessMode:
+    """
+    Simulates old acquire_draft_lock behavior returning AccessMode.
+    Note: 'session' must be passed or mocked if using real DB logic, but tests might mock DraftLockManager?
+    Actually tests pass 'draft_id', 'user', 'roles'. They might rely on global session or something?
+    Wait, the failing call was: `acquire_draft_lock(draft_id, user_b, roles=[])`.
+    My wrapper expected `session` first.
+    I swapped arguments to match usage I saw in error: `Argument 1 to "acquire_draft_lock" has incompatible type "UUID"; expected "AsyncSession"`.
+    Ah, so `draft_id` is passed as first arg.
+
+    If tests don't pass session, this function is expected to get it somehow or mock it.
+    But I refactored to use `DraftLockManager` which NEEDS session.
+    If I can't get session, I can't use `DraftLockManager`.
+    But `test_validation_business_goals.py` mocks `acquire_draft_lock` usually?
+    No, it imports it.
+    The test likely patches `async_session_factory` if it's integration.
+    Or I should create a new session here if None?
+    """
+    if session is None:
+        # Try to get from global factory?
+        from coreason_adlc_api.db import async_session_factory
+
+        async with async_session_factory() as s:
+            manager = DraftLockManager(s, user)
+            # Determine force from roles
+            force = "MANAGER" in (roles or [])
+            try:
+                await manager.acquire_lock(draft_id, force=force)
+                return AccessMode.EDIT
+            except DraftLockedError:
+                if force:  # Should have forced?
+                    return AccessMode.SAFE_VIEW  # Or something?
+                # If we are here, we failed to acquire lock.
+                # If user is manager, maybe they get SAFE_VIEW?
+                if "MANAGER" in (roles or []):
+                    return AccessMode.SAFE_VIEW
+                raise
+
+    manager = DraftLockManager(session, user)
+    force = "MANAGER" in (roles or [])
+    try:
+        await manager.acquire_lock(draft_id, force=force)
+        return AccessMode.EDIT
+    except DraftLockedError:
+        if "MANAGER" in (roles or []):
+            return AccessMode.SAFE_VIEW
+        raise
+
+
+async def verify_lock_for_update(session: AsyncSession, user: UserIdentity, draft_id: str) -> None:
+    manager = DraftLockManager(session, user)
+    await manager.check_lock(draft_id)

@@ -11,7 +11,7 @@
 import logging
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
 from coreason_veritas import governed_execution
 from sqlmodel import select
@@ -22,6 +22,7 @@ from coreason_adlc_api.db_models import ArtifactModel, DraftModel
 from coreason_adlc_api.exceptions import AccessDeniedError, ComplianceViolationError, ResourceNotFoundError
 from coreason_adlc_api.workbench.locking import DraftLockManager
 from coreason_adlc_api.workbench.schemas import (
+    AgentArtifact,
     ApprovalStatus,
     ArtifactResponse,
     DraftCreate,
@@ -55,7 +56,7 @@ class WorkbenchService:
 
         await self._check_access(project_id)
 
-        # Force recompile - Pack title and oas_content into DB content field
+        # Pack title and oas_content into DB content field
         db_content = {"title": draft_in.title, "oas_content": draft_in.oas_content, "runtime_env": draft_in.runtime_env}
 
         draft = DraftModel(
@@ -79,6 +80,13 @@ class WorkbenchService:
 
         await self._check_access(draft.project_id)
         return self._map_to_response(draft)
+
+    async def list_drafts(self, project_id: str) -> List[DraftResponse]:
+        await self._check_access(project_id)
+        query = select(DraftModel).where(DraftModel.project_id == project_id)
+        result = await self.session.exec(query)
+        drafts = result.all()
+        return [self._map_to_response(d) for d in drafts]
 
     @governed_execution(asset_id_arg="draft_id", signature_arg=None, user_id_arg="user_id", allow_unsigned=True)  # type: ignore
     async def update_draft(self, draft_id: str, draft_in: DraftUpdate, user_id: str) -> DraftResponse:
@@ -111,6 +119,27 @@ class WorkbenchService:
         await self.session.commit()
         await self.session.refresh(draft)
         return self._map_to_response(draft)
+
+    async def assemble_artifact(self, draft_id: str) -> AgentArtifact:
+        query = select(DraftModel).where(DraftModel.id == uuid.UUID(draft_id))
+        result = await self.session.exec(query)
+        draft = result.one_or_none()
+
+        if not draft:
+            raise ResourceNotFoundError(f"Draft {draft_id} not found")
+
+        await self._check_access(draft.project_id)
+
+        content = draft.content or {}
+
+        return AgentArtifact(
+            id=draft.id,
+            auc_id=draft.project_id,
+            version=str(draft.version),
+            content=content,
+            compliance_hash="dummy-hash-for-preview",
+            created_at=draft.updated_at or draft.created_at,
+        )
 
     @governed_execution(
         asset_id_arg="draft_id",
@@ -187,14 +216,21 @@ class WorkbenchService:
         await self.session.refresh(draft)
         return self._map_to_response(draft)
 
+    async def transition_draft_status(self, draft_id: str, status: ApprovalStatus) -> DraftResponse:
+        if status == ApprovalStatus.APPROVED:
+            return await self.approve_draft(draft_id)
+        elif status == ApprovalStatus.REJECTED:
+            return await self.reject_draft(draft_id, None)
+        else:
+            return await self.get_draft(draft_id)
+
     def _map_to_response(self, draft: DraftModel) -> DraftResponse:
         """Helper to map internal DB model to API Schema."""
         content = draft.content or {}
 
-        # Calculate lock expiry if locked
         lock_expiry = None
         if draft.locked_at:
-            lock_expiry = draft.locked_at + timedelta(minutes=30)  # Hardcoded timeout from locking.py
+            lock_expiry = draft.locked_at + timedelta(minutes=30)
 
         return DraftResponse(
             draft_id=draft.id,

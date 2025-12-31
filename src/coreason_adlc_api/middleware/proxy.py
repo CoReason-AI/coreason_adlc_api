@@ -50,9 +50,7 @@ class InferenceProxyService:
 
         async with async_session_factory() as session:
             # Fix fields: project_id (not auc_id), key_name (not service_name)
-            statement = select(SecretModel).where(
-                SecretModel.project_id == auc_id, SecretModel.key_name == provider
-            )
+            statement = select(SecretModel).where(SecretModel.project_id == auc_id, SecretModel.key_name == provider)
             result = await session.exec(statement)
             secret = result.first()
 

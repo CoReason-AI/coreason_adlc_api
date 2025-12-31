@@ -21,7 +21,7 @@ from coreason_adlc_api.middleware.proxy import InferenceProxyService
 from coreason_adlc_api.middleware.telemetry import TelemetryService
 from coreason_adlc_api.routers.interceptor import chat_completions
 from coreason_adlc_api.routers.schemas import ChatCompletionRequest, ChatMessage
-from coreason_adlc_api.routers.workbench import create_new_draft
+from coreason_adlc_api.routers.workbench import create_draft
 from coreason_adlc_api.workbench.schemas import DraftCreate
 
 
@@ -163,7 +163,7 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
 
         # --- STEP 1: Workbench - Create Draft ---
         draft_req = DraftCreate(auc_id=auc_id, title="Agent Smith", oas_content={})
-        draft_resp = await create_new_draft(draft_req, identity)
+        draft_resp = await create_draft(draft_req, identity)
 
         assert draft_resp.title == "Agent Smith"
         mock_map_groups.assert_called()  # Verified RBAC

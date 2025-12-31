@@ -14,8 +14,6 @@ from unittest import mock
 
 import pytest
 
-from coreason_adlc_api.middleware.telemetry import async_log_telemetry
-
 
 @pytest.fixture
 def mock_redis() -> Any:

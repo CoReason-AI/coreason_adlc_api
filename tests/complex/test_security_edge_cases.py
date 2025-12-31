@@ -17,7 +17,7 @@ from fastapi import HTTPException
 
 from coreason_adlc_api.auth.identity import UserIdentity
 from coreason_adlc_api.routers.workbench import (
-    create_new_draft,
+    create_draft,
     get_draft,
     list_drafts,
 )
@@ -117,7 +117,7 @@ async def test_cross_project_creation_denied(mock_identity: UserIdentity, mock_p
         # Patch create_draft to ensure it's NOT called
         with patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create:
             with pytest.raises(HTTPException) as exc:
-                await create_new_draft(draft_input, identity=mock_identity)
+                await create_draft(draft_input, identity=mock_identity)
 
             assert exc.value.status_code == 403
             mock_create.assert_not_called()
@@ -220,7 +220,7 @@ async def test_malformed_json_injection(mock_identity: UserIdentity, mock_pool: 
         with patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create:
             mock_create.return_value = MagicMock(title="Deep Draft")
 
-            response = await create_new_draft(draft_input, identity=mock_identity)
+            response = await create_draft(draft_input, identity=mock_identity)
 
             assert response.title == "Deep Draft"
             # Verify it didn't crash

@@ -323,7 +323,8 @@ async def test_map_groups_to_projects(mock_db_session) -> None:
 
     # When using `session.exec(select(col))`, it returns a Result object.
     # The code `list(result.all())` expects the `all()` method to return the list of values.
-    # If the mocked `all()` returns `["project-alpha", "project-beta"]`, `list()` will wrap it if it's not already a list or consume it.
+    # If the mocked `all()` returns `["project-alpha", "project-beta"]`,
+    # `list()` will wrap it if it's not already a list or consume it.
 
     # Fix: Ensure mock returns a list of valid project IDs directly.
     mock_db_session.exec.return_value.all.return_value = ["project-alpha", "project-beta"]

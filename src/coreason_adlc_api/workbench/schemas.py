@@ -48,13 +48,13 @@ class DraftResponse(BaseModel):
     title: str
     oas_content: Dict[str, Any]
     runtime_env: Optional[str] = None
-    status: ApprovalStatus
+    status: ApprovalStatus = ApprovalStatus.DRAFT
     locked_by_user: Optional[UUID] = Field(default=None)
     lock_expiry: Optional[datetime] = None  # Not directly in DB, calculated
     mode: AccessMode = AccessMode.EDIT  # Calculated
     created_at: datetime
     updated_at: datetime
-    version: int
+    version: int = 1
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

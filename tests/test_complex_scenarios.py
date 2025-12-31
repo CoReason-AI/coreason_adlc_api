@@ -17,8 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock
-from coreason_adlc_api.workbench.schemas import DraftCreate, DraftUpdate
+from coreason_adlc_api.workbench.schemas import AccessMode, DraftCreate, DraftUpdate, acquire_draft_lock
 from coreason_adlc_api.workbench.service import create_draft, update_draft
 
 
