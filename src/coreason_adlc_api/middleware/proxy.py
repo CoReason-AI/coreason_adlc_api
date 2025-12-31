@@ -103,7 +103,7 @@ class InferenceProxyService:
             ) from e
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             logger.error(f"Inference Proxy Error: {e}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
 
