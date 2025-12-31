@@ -13,16 +13,29 @@ from unittest import mock
 
 import pytest
 from fastapi import HTTPException
+from aiobreaker import CircuitBreakerError
+from aiobreaker.state import CircuitOpenState
 
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
+from coreason_adlc_api.db_models import Secret
 
 
 @pytest.fixture
-def mock_db_pool() -> Any:
-    with mock.patch("coreason_adlc_api.middleware.proxy.get_pool") as mock_pool:
-        pool_instance = mock.AsyncMock()
-        mock_pool.return_value = pool_instance
-        yield pool_instance
+def mock_db_session() -> Any:
+    # Use generic AsyncMock for session
+    session = mock.AsyncMock()
+    # SQLModel exec return
+    result_mock = mock.MagicMock()
+    result_mock.first.return_value = None
+    session.exec.return_value = result_mock
+
+    # Factory mock
+    factory_mock = mock.MagicMock()
+    factory_mock.__aenter__.return_value = session
+    factory_mock.__aexit__.return_value = None
+
+    with mock.patch("coreason_adlc_api.middleware.proxy.async_session_factory", return_value=factory_mock):
+        yield session
 
 
 @pytest.fixture
@@ -50,11 +63,13 @@ def proxy_service() -> InferenceProxyService:
 
 @pytest.mark.asyncio
 async def test_proxy_success(
-    proxy_service: InferenceProxyService, mock_db_pool: Any, mock_vault_crypto: Any, mock_litellm: Any
+    proxy_service: InferenceProxyService, mock_db_session: Any, mock_vault_crypto: Any, mock_litellm: Any
 ) -> None:
     """Test successful proxy execution."""
     # Setup DB
-    mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
+    mock_secret = mock.MagicMock(spec=Secret)
+    mock_secret.encrypted_value = "enc-key"
+    mock_db_session.exec.return_value.first.return_value = mock_secret
 
     messages = [{"role": "user", "content": "hello"}]
     model = "gpt-4"
@@ -76,9 +91,9 @@ async def test_proxy_success(
 
 
 @pytest.mark.asyncio
-async def test_proxy_missing_key(proxy_service: InferenceProxyService, mock_db_pool: Any, mock_litellm: Any) -> None:
+async def test_proxy_missing_key(proxy_service: InferenceProxyService, mock_db_session: Any, mock_litellm: Any) -> None:
     """Test 404 when key not found."""
-    mock_db_pool.fetchrow.return_value = None
+    mock_db_session.exec.return_value.first.return_value = None
 
     with pytest.raises(HTTPException) as exc:
         await proxy_service.execute_inference([], "gpt-4", "proj-1")
@@ -89,26 +104,25 @@ async def test_proxy_missing_key(proxy_service: InferenceProxyService, mock_db_p
 
 @pytest.mark.asyncio
 async def test_proxy_circuit_breaker(
-    proxy_service: InferenceProxyService, mock_db_pool: Any, mock_vault_crypto: Any, mock_litellm: Any
+    proxy_service: InferenceProxyService, mock_db_session: Any, mock_vault_crypto: Any, mock_litellm: Any
 ) -> None:
     """Test that circuit breaker opens after failures."""
-    mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
+    mock_secret = mock.MagicMock(spec=Secret)
+    mock_secret.encrypted_value = "enc-key"
+    mock_db_session.exec.return_value.first.return_value = mock_secret
 
     # Get the specific breaker for 'openai' (default mock provider)
     breaker = proxy_service.get_circuit_breaker("openai")
 
-    # Reset breaker (manual reset for custom class)
-    breaker.state = "closed"
-    breaker.failure_history.clear()
+    # Manually trip by mocking state or using open() method if available
+    # aiobreaker CircuitBreaker has .open() method
+    breaker.open()
 
-    # Manually trip
-    breaker.state = "open"
-    import time
-
-    breaker.last_failure_time = time.time()
+    # Verify it is open
+    # We might need to handle the fact that aiobreaker checks time.
+    # But calling .open() sets state to Open.
 
     # Next call should raise ServiceUnavailable (Circuit Open) immediately
-    mock_litellm.acompletion.side_effect = None
 
     with pytest.raises(HTTPException) as exc:
         await proxy_service.execute_inference([], "gpt-4", "proj-1")
@@ -117,4 +131,4 @@ async def test_proxy_circuit_breaker(
     assert "Upstream model service is currently unstable" in exc.value.detail
 
     # Cleanup
-    breaker.state = "closed"
+    breaker.close()
