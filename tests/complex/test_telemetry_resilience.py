@@ -13,6 +13,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import redis
+
 from coreason_adlc_api.middleware.telemetry import async_log_telemetry
 from coreason_adlc_api.telemetry.worker import telemetry_worker
 
@@ -25,11 +27,11 @@ async def test_producer_redis_down_resilience() -> None:
     and NOT raise an exception to the caller (e.g., the API request handler).
     """
     # Simulate Redis client raising an exception on rpush
-    # Note: async_log_telemetry calls client.rpush synchronously in the current implementation.
+    # Note: async_log_telemetry calls client.rpush asynchronously now.
     with patch("coreason_adlc_api.middleware.telemetry.get_redis_client") as mock_get_client:
-        mock_redis = MagicMock()
+        mock_redis = AsyncMock()
         mock_get_client.return_value = mock_redis
-        mock_redis.rpush.side_effect = ConnectionError("Redis is unreachable")
+        mock_redis.rpush.side_effect = redis.ConnectionError("Redis is unreachable")
 
         try:
             await async_log_telemetry(
@@ -55,7 +57,7 @@ async def test_worker_db_down_resilience() -> None:
     Expectation: The Worker should catch the DB exception, log the error,
     and continue processing the next item (not crash the loop).
     """
-    mock_redis = MagicMock()
+    mock_redis = AsyncMock()
     # Sequence:
     # 1. Valid Message (DB fails)
     # 2. Stop (CancelledError)
@@ -70,27 +72,7 @@ async def test_worker_db_down_resilience() -> None:
         "timestamp": "2024-01-01",
     }
 
-    # In telemetry_worker, client.blpop is run via asyncio.to_thread
-    # So the mock return value should be the raw value (tuple or None), NOT an awaitable.
-    # The worker logic: result = await asyncio.to_thread(client.blpop, ...)
-    # to_thread runs the sync function in a thread.
-    # So side_effect should return the actual values.
-    # Reviewer Note: If the code uses `await client.blpop()`, then we need awaitables.
-    # But `telemetry_worker` uses `await asyncio.to_thread(client.blpop, ...)`.
-    # Therefore, the mock SHOULD return plain values.
-    # Let's verify `telemetry_worker` implementation.
-    # It does: `result = await asyncio.to_thread(client.blpop, "telemetry_queue", timeout=1)`
-    # So `client.blpop` is called synchronously in a thread.
-    # Thus, `side_effect` should be plain values. The Reviewer might have assumed `await client.blpop`.
-    # HOWEVER, `test_telemetry_worker.py` (existing test) uses `mock_redis.blpop.side_effect = [...]`.
-    # Let's double check if I'm right about to_thread.
-    # Yes, I read `src/coreason_adlc_api/telemetry/worker.py` and it uses `asyncio.to_thread`.
-    # So the Reviewer might be mistaken OR `asyncio.to_thread` with a MagicMock behaves differently?
-    # `asyncio.to_thread(func, *args)` calls `func(*args)` in a thread.
-    # If `func` is `mock_redis.blpop`, it calls it.
-    # So `mock_redis.blpop` should behave like a sync function.
-    # I will stick to plain values but ensure the list is correct.
-
+    # Now using async blpop directly, no to_thread.
     mock_redis.blpop.side_effect = [("queue", json.dumps(payload)), asyncio.CancelledError("Stop")]
 
     mock_pool = MagicMock()
@@ -121,7 +103,7 @@ async def test_worker_mixed_failure_stream() -> None:
     3. Valid Message -> DB Down -> Should skip/log
     4. Valid Message -> Success -> Should insert
     """
-    mock_redis = MagicMock()
+    mock_redis = AsyncMock()
     valid_payload = {
         "user_uuid": None,
         "auc_id": "proj-1",
@@ -133,7 +115,7 @@ async def test_worker_mixed_failure_stream() -> None:
         "timestamp": "2024-01-01",
     }
 
-    # Same logic as above: asyncio.to_thread expects sync return values.
+    # Now using async blpop directly.
     mock_redis.blpop.side_effect = [
         ("queue", "INVALID JSON"),  # 1. Poison
         None,  # 2. Timeout

@@ -12,8 +12,9 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from coreason_adlc_api.middleware.proxy import execute_inference_proxy, proxy_breaker
 from fastapi import HTTPException
+
+from coreason_adlc_api.middleware.proxy import InferenceProxyService
 
 
 @pytest.fixture
@@ -42,8 +43,15 @@ def mock_litellm() -> Any:
         yield mock_llm
 
 
+@pytest.fixture
+def proxy_service() -> InferenceProxyService:
+    return InferenceProxyService()
+
+
 @pytest.mark.asyncio
-async def test_proxy_success(mock_db_pool: Any, mock_vault_crypto: Any, mock_litellm: Any) -> None:
+async def test_proxy_success(
+    proxy_service: InferenceProxyService, mock_db_pool: Any, mock_vault_crypto: Any, mock_litellm: Any
+) -> None:
     """Test successful proxy execution."""
     # Setup DB
     mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
@@ -52,7 +60,7 @@ async def test_proxy_success(mock_db_pool: Any, mock_vault_crypto: Any, mock_lit
     model = "gpt-4"
     auc_id = "proj-1"
 
-    response = await execute_inference_proxy(messages, model, auc_id)
+    response = await proxy_service.execute_inference(messages, model, auc_id)
 
     assert response["choices"][0]["message"]["content"] == "response"
 
@@ -68,43 +76,45 @@ async def test_proxy_success(mock_db_pool: Any, mock_vault_crypto: Any, mock_lit
 
 
 @pytest.mark.asyncio
-async def test_proxy_missing_key(mock_db_pool: Any, mock_litellm: Any) -> None:
+async def test_proxy_missing_key(proxy_service: InferenceProxyService, mock_db_pool: Any, mock_litellm: Any) -> None:
     """Test 404 when key not found."""
     mock_db_pool.fetchrow.return_value = None
 
     with pytest.raises(HTTPException) as exc:
-        await execute_inference_proxy([], "gpt-4", "proj-1")
+        await proxy_service.execute_inference([], "gpt-4", "proj-1")
 
     assert exc.value.status_code == 404
     assert "API Key not configured" in exc.value.detail
 
 
 @pytest.mark.asyncio
-async def test_proxy_circuit_breaker(mock_db_pool: Any, mock_vault_crypto: Any, mock_litellm: Any) -> None:
+async def test_proxy_circuit_breaker(
+    proxy_service: InferenceProxyService, mock_db_pool: Any, mock_vault_crypto: Any, mock_litellm: Any
+) -> None:
     """Test that circuit breaker opens after failures."""
     mock_db_pool.fetchrow.return_value = {"encrypted_value": "enc-key"}
 
+    # Get the specific breaker for 'openai' (default mock provider)
+    breaker = proxy_service.get_circuit_breaker("openai")
+
     # Reset breaker (manual reset for custom class)
-    proxy_breaker.state = "closed"
-    proxy_breaker.failure_history.clear()
+    breaker.state = "closed"
+    breaker.failure_history.clear()
 
     # Manually trip
-    proxy_breaker.state = "open"
-    proxy_breaker.last_failure_time = 1234567890  # Long ago? No, wait.
-    # If last_failure_time is old, it might try half-open.
-    # We want it to be RECENT to ensure it stays open.
+    breaker.state = "open"
     import time
 
-    proxy_breaker.last_failure_time = time.time()
+    breaker.last_failure_time = time.time()
 
     # Next call should raise ServiceUnavailable (Circuit Open) immediately
     mock_litellm.acompletion.side_effect = None
 
     with pytest.raises(HTTPException) as exc:
-        await execute_inference_proxy([], "gpt-4", "proj-1")
+        await proxy_service.execute_inference([], "gpt-4", "proj-1")
 
     assert exc.value.status_code == 503
     assert "Upstream model service is currently unstable" in exc.value.detail
 
     # Cleanup
-    proxy_breaker.state = "closed"
+    breaker.state = "closed"

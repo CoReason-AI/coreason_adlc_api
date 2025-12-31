@@ -8,17 +8,21 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import asyncio
 from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from fastapi import BackgroundTasks, HTTPException
+
 from coreason_adlc_api.auth.identity import UserIdentity
-from coreason_adlc_api.routers.interceptor import ChatCompletionRequest, chat_completions
+from coreason_adlc_api.middleware.budget import BudgetService
+from coreason_adlc_api.middleware.proxy import InferenceProxyService
+from coreason_adlc_api.middleware.telemetry import TelemetryService
+from coreason_adlc_api.routers.interceptor import chat_completions
+from coreason_adlc_api.routers.schemas import ChatCompletionRequest, ChatMessage
 from coreason_adlc_api.routers.workbench import create_new_draft
 from coreason_adlc_api.workbench.schemas import DraftCreate
-from fastapi import HTTPException
 
 
 @pytest.fixture
@@ -93,17 +97,14 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
     # 1. DB: RBAC & Drafts
     # Queries: map_groups_to_projects, create_draft, get_api_key...
 
-    # We'll use side_effect to handle different queries if needed, or just lenient mocks.
-    # For map_groups_to_projects (called in Workbench), we patch the function directly usually.
-    # For Vault secret fetch, it uses pool.fetchrow.
-
     # Mock Vault Secret Return
     mock_pool.fetchrow.return_value = {"encrypted_value": b"encrypted_fake_key"}
 
-    # 2. Redis: Budget & Telemetry
-    mock_redis = MagicMock()
-    # Budget: incrbyfloat returns new total (e.g. 0.05)
-    mock_redis.incrbyfloat.return_value = 0.05
+    # 2. Redis: Budget & Telemetry (Async)
+    mock_redis = AsyncMock()
+    # Budget: uses eval now. Returns [1, new_spend, is_new]
+    # Simulate spending 0.01 (request cost) + previous 0.04 = 0.05
+    mock_redis.eval.return_value = [1, 0.05, 0]
 
     # 3. Vault Crypto
     mock_crypto = MagicMock()
@@ -111,6 +112,10 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
 
     # 4. LiteLLM
     mock_litellm_resp = {
+        "id": "chatcmpl-sys",
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "gpt-4",
         "choices": [{"message": {"content": llm_output_text}}],
         "usage": {"total_tokens": 100},
     }
@@ -136,15 +141,25 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
             "coreason_adlc_api.middleware.proxy.litellm.get_llm_provider",
             return_value=("openai", "gpt-4", "k", "b"),
         ),
+        # Patch cost estimation in proxy service if needed, OR mock litellm directly
+        patch("coreason_adlc_api.middleware.proxy.litellm.token_counter", return_value=10),
+        patch(
+            "coreason_adlc_api.middleware.proxy.litellm.model_cost",
+            {"gpt-4": {"input_cost_per_token": 0.001, "output_cost_per_token": 0.002}},
+        ),
         patch("coreason_adlc_api.routers.interceptor.litellm.completion_cost", return_value=0.03),  # Real cost calc
-        # Patch PII Scrubbing
+        # Patch PII Scrubbing - return coroutines
         patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
     ):
         # Configure Mocks
         mock_map_groups.return_value = [auc_id]
         mock_create_draft.return_value = MagicMock(auc_id=auc_id, title="Agent Smith")
         mock_acompletion.return_value = mock_litellm_resp
-        mock_scrub.side_effect = lambda x: x.replace("sensitive@example.com", "<REDACTED>")
+
+        async def mock_scrub_side_effect(x: str) -> str:
+            return x.replace("sensitive@example.com", "<REDACTED>")
+
+        mock_scrub.side_effect = mock_scrub_side_effect
 
         # --- STEP 1: Workbench - Create Draft ---
         draft_req = DraftCreate(auc_id=auc_id, title="Agent Smith", oas_content={})
@@ -157,20 +172,28 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         # --- STEP 2: Interceptor - Chat Completion ---
         chat_req = ChatCompletionRequest(
             model=model_name,
-            messages=[{"role": "user", "content": user_input_text}],
+            messages=[ChatMessage(role="user", content=user_input_text)],
             auc_id=auc_id,
             estimated_cost=0.01,
         )
 
-        _ = await chat_completions(chat_req, identity)
+        bg_tasks = BackgroundTasks()
+
+        # Instantiate services manually for direct function call
+        budget_svc = BudgetService()
+        proxy_svc = InferenceProxyService()
+        telemetry_svc = TelemetryService()
+
+        _ = await chat_completions(chat_req, bg_tasks, identity, budget_svc, proxy_svc, telemetry_svc)
+
+        # Execute background tasks manually for the test
+        for task in bg_tasks.tasks:
+            await task()
 
         # --- Verification Phase ---
 
         # 1. Budget Checked?
-        mock_redis.incrbyfloat.assert_called()  # Should call for budget check
-        # Specifically check the key format if we want to be pedantic, but called is good enough.
-        args, _ = mock_redis.incrbyfloat.call_args
-        assert f"budget:{asyncio.get_event_loop().time()}" not in args[0]  # Just ensuring it ran
+        mock_redis.eval.assert_called()  # Should call eval for budget check
 
         # 2. Vault Accessed?
         mock_pool.fetchrow.assert_called()  # To get encrypted key
@@ -223,26 +246,32 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
 
     identity = UserIdentity(oid=user_oid, email="poor@example.com", groups=[], full_name="Poor User")
 
-    mock_redis = MagicMock()
-    # Simulate Budget Limit Hit: Current spend + Cost > Limit (default $10.0)
-    # Return 11.0
-    mock_redis.incrbyfloat.return_value = 11.0
+    mock_redis = AsyncMock()
+    # Simulate Budget Limit Hit:
+    # Lua script returns [0 (failed), current_balance, 0]
+    # We simulate current balance = 10.0, limit = 10.0, cost = 1.0 -> 11.0 > 10.0
+    mock_redis.eval.return_value = [0, 10.0, 0]
 
     with (
         patch("coreason_adlc_api.middleware.budget.get_redis_client", return_value=mock_redis),
         patch("coreason_adlc_api.middleware.budget.settings.DAILY_BUDGET_LIMIT", 10.0),
     ):
         req = ChatCompletionRequest(
-            model="gpt-4", messages=[{"role": "user", "content": "hi"}], auc_id=auc_id, estimated_cost=1.0
+            model="gpt-4", messages=[ChatMessage(role="user", content="hi")], auc_id=auc_id, estimated_cost=1.0
         )
 
+        bg_tasks = BackgroundTasks()
+
+        # Instantiate services manually for direct function call
+        budget_svc = BudgetService()
+        proxy_svc = InferenceProxyService()
+        telemetry_svc = TelemetryService()
+
         with pytest.raises(HTTPException) as exc:
-            await chat_completions(req, identity)
+            await chat_completions(req, bg_tasks, identity, budget_svc, proxy_svc, telemetry_svc)
 
         assert exc.value.status_code == 402
         assert "limit exceeded" in exc.value.detail
 
-        # Verify rollback (decrement)
-        assert mock_redis.incrbyfloat.call_count == 2
-        # First call: +1.0 -> Returns 11.0
-        # Second call: -1.0 -> Rollback
+        # Verify no separate rollback call (handled by atomic Lua)
+        assert not mock_redis.incrbyfloat.called

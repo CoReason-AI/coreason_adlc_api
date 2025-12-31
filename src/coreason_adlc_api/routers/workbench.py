@@ -10,18 +10,31 @@
 
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException, status
+
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
 from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.middleware.budget import check_budget_status
+from coreason_adlc_api.middleware.pii import scrub_pii_recursive
 from coreason_adlc_api.workbench.locking import refresh_lock
-from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, DraftResponse, DraftUpdate
+from coreason_adlc_api.workbench.schemas import (
+    AgentArtifact,
+    ApprovalStatus,
+    DraftCreate,
+    DraftResponse,
+    DraftUpdate,
+    PublishRequest,
+    ValidationResponse,
+)
 from coreason_adlc_api.workbench.service import (
+    assemble_artifact,
     create_draft,
     get_draft_by_id,
     get_drafts,
+    publish_artifact,
     transition_draft_status,
     update_draft,
 )
-from fastapi import APIRouter, Depends, HTTPException, status
 
 router = APIRouter(prefix="/workbench", tags=["Workbench"])
 
@@ -114,6 +127,36 @@ async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_
     return {"success": True}
 
 
+@router.post("/validate", response_model=ValidationResponse)
+async def validate_draft(
+    draft: DraftCreate, identity: UserIdentity = Depends(parse_and_validate_token)
+) -> ValidationResponse:
+    """
+    Stateless validation of a draft.
+    Checks for:
+    1. Budget limits (read-only)
+    2. PII presence (recursive)
+    Does NOT save to DB.
+    """
+    issues = []
+
+    # 1. Budget Check
+    if not await check_budget_status(identity.oid):
+        issues.append("Budget Limit Reached")
+
+    # 2. PII Check
+    try:
+        scrubbed_content = await scrub_pii_recursive(draft.oas_content)
+        # Deep comparison
+        if scrubbed_content != draft.oas_content:
+            issues.append("PII Detected")
+    except Exception:
+        # Fail-closed if PII check fails (e.g. Analyzer missing handled in middleware, but other errors)
+        issues.append("PII Check Failed")
+
+    return ValidationResponse(is_valid=(len(issues) == 0), issues=issues)
+
+
 # --- Approval Workflow Endpoints ---
 
 
@@ -163,3 +206,35 @@ async def reject_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_an
 
     await _get_draft_and_verify_access(draft_id, identity)
     return await transition_draft_status(draft_id, identity.oid, ApprovalStatus.REJECTED)
+
+
+# --- Artifact Assembly & Publication Endpoints ---
+
+
+@router.get("/drafts/{draft_id}/assemble", response_model=AgentArtifact)
+async def get_artifact_assembly(
+    draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
+) -> AgentArtifact:
+    """
+    Returns the assembled AgentArtifact for an APPROVED draft.
+    """
+    await _get_draft_and_verify_access(draft_id, identity)
+    try:
+        return await assemble_artifact(draft_id, identity.oid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/drafts/{draft_id}/publish", response_model=dict[str, str])
+async def publish_agent_artifact(
+    draft_id: UUID, request: PublishRequest, identity: UserIdentity = Depends(parse_and_validate_token)
+) -> dict[str, str]:
+    """
+    Publishes the signed artifact.
+    """
+    await _get_draft_and_verify_access(draft_id, identity)
+    try:
+        url = await publish_artifact(draft_id, request.signature, identity.oid)
+        return {"url": url}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e

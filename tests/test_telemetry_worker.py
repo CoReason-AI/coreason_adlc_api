@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
+
 from coreason_adlc_api.telemetry.worker import telemetry_worker
 
 
@@ -21,7 +22,8 @@ from coreason_adlc_api.telemetry.worker import telemetry_worker
 async def test_telemetry_worker_success() -> None:
     """Verify worker processes a message and inserts into DB."""
 
-    mock_redis = MagicMock()
+    # Updated to AsyncMock because get_redis_client now returns an async client
+    mock_redis = AsyncMock()
 
     # Data to be returned by blpop
     sample_payload = {
@@ -69,7 +71,7 @@ async def test_telemetry_worker_success() -> None:
 @pytest.mark.asyncio
 async def test_telemetry_worker_bad_json() -> None:
     """Verify worker handles bad JSON gracefully."""
-    mock_redis = MagicMock()
+    mock_redis = AsyncMock()
     mock_redis.blpop.side_effect = [("telemetry_queue", "NOT JSON"), asyncio.CancelledError("Stop")]
     mock_pool = MagicMock()
     mock_pool.execute = AsyncMock()
@@ -91,7 +93,7 @@ async def test_telemetry_worker_bad_json() -> None:
 @pytest.mark.asyncio
 async def test_telemetry_worker_empty_result() -> None:
     """Verify worker handles empty/None results from Redis (timeout)."""
-    mock_redis = MagicMock()
+    mock_redis = AsyncMock()
     # 1. None (timeout)
     # 2. (key, None) (unexpected but possible if key exists but empty? BLPOP returns list or None)
     # 3. Stop
@@ -113,7 +115,7 @@ async def test_telemetry_worker_empty_result() -> None:
 @pytest.mark.asyncio
 async def test_telemetry_worker_outer_exception() -> None:
     """Verify worker handles outer loop exceptions (e.g. Redis connection error)."""
-    mock_redis = MagicMock()
+    mock_redis = AsyncMock()
 
     # raise Exception, then Stop
     mock_redis.blpop.side_effect = [Exception("Redis connection failed"), asyncio.CancelledError("Stop")]

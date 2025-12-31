@@ -8,114 +8,135 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-from typing import Any, Dict, List
+import asyncio
+from typing import Any, Dict, List, Optional
 
 import litellm
-from coreason_adlc_api.db import get_pool
-from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
-from coreason_adlc_api.vault.crypto import VaultCrypto
 from fastapi import HTTPException, status
 from loguru import logger
 
-# Circuit Breaker Configuration
-# Threshold: 5 errors.
-# Reset timeout: 60 seconds.
-proxy_breaker = AsyncCircuitBreaker(fail_max=5, reset_timeout=60)
+from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
+from coreason_adlc_api.vault.crypto import VaultCrypto
+
+# Circuit Breaker Registry
+_breakers: Dict[str, AsyncCircuitBreaker] = {}
 
 
-async def get_api_key_for_model(auc_id: str, model: str) -> str:
+class InferenceProxyService:
     """
-    Fetches and decrypts the API key for the given model and project (AUC ID).
-    """
-    pool = get_pool()
-
-    # Map model name to service name (e.g. gpt-4 -> openai, claude -> anthropic)
-    # For now, we assume the 'service_name' column in DB matches what we need,
-    # or we do a lookup. The spec says:
-    # "service_name VARCHAR(50) NOT NULL, -- e.g., 'openai', 'deepseek'"
-    # Ideally we derive service from model name via litellm.get_llm_provider(model)
-    # But for this atomic unit, let's assume the user passes a mapped service name or we infer it.
-    # To keep it simple and robust, we'll try to guess provider from model name using litellm helper
-    # if possible, or just look up by model name if the schema supports it.
-    # Spec FR-API-013 says `service_name`.
-    # Let's assume we store keys by service_name (e.g. 'openai').
-
-    try:
-        # litellm.get_llm_provider returns (provider, model, api_key, api_base)
-        provider, _, _, _ = litellm.get_llm_provider(model)  # type: ignore[attr-defined]
-    except Exception:
-        # Fallback or strict?
-        provider = model.split("/")[0] if "/" in model else "openai"
-
-    query = """
-        SELECT encrypted_value
-        FROM vault.secrets
-        WHERE auc_id = $1 AND service_name = $2
+    Service to proxy inference requests to LLM providers.
+    Handles cost estimation, provider selection, API key retrieval, and circuit breaking.
     """
 
-    row = await pool.fetchrow(query, auc_id, provider)
+    def get_circuit_breaker(self, provider: str) -> AsyncCircuitBreaker:
+        if provider not in _breakers:
+            _breakers[provider] = AsyncCircuitBreaker(fail_max=5, reset_timeout=60)
+        return _breakers[provider]
 
-    if not row:
-        logger.error(f"No API key found for project {auc_id} service {provider}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"API Key not configured for {provider} in this project."
-        )
+    def get_provider_for_model(self, model: str) -> str:
+        try:
+            # litellm.get_llm_provider returns (provider, model, api_key, api_base)
+            provider, _, _, _ = litellm.get_llm_provider(model)  # type: ignore[attr-defined]
+            return str(provider)
+        except Exception:
+            return model.split("/")[0] if "/" in model else "openai"
 
-    encrypted_value = row["encrypted_value"]
+    async def get_api_key_for_model(self, auc_id: str, model: str) -> str:
+        pool = get_pool()
+        provider = self.get_provider_for_model(model)
 
-    # Decrypt in memory
-    try:
-        crypto = VaultCrypto()
-        return crypto.decrypt_secret(encrypted_value)
-    except Exception as e:
-        logger.error(f"Decryption failed for {auc_id}/{provider}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Secure Vault access failed."
-        ) from e
+        query = """
+            SELECT encrypted_value
+            FROM vault.secrets
+            WHERE auc_id = $1 AND service_name = $2
+        """
+        row = await pool.fetchrow(query, auc_id, provider)
+
+        if not row:
+            logger.error(f"No API key found for project {auc_id} service {provider}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"API Key not configured for {provider} in this project."
+            )
+
+        encrypted_value = row["encrypted_value"]
+        try:
+            crypto = VaultCrypto()
+            return crypto.decrypt_secret(encrypted_value)
+        except Exception as e:
+            logger.error(f"Decryption failed for {auc_id}/{provider}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Secure Vault access failed."
+            ) from e
+
+    async def execute_inference(
+        self, messages: List[Dict[str, Any]], model: str, auc_id: str, user_context: Optional[Dict[str, Any]] = None
+    ) -> Any:
+        try:
+            provider = self.get_provider_for_model(model)
+            api_key = await self.get_api_key_for_model(auc_id, model)
+
+            kwargs = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.0,
+                "seed": user_context.get("seed", 42) if user_context else 42,
+                "api_key": api_key,
+            }
+
+            breaker = self.get_circuit_breaker(provider)
+            async with breaker:
+                response = await litellm.acompletion(**kwargs)
+
+            return response
+
+        except CircuitBreakerOpenError as e:
+            logger.error(f"Circuit Breaker Open for Inference Proxy (Provider: {self.get_provider_for_model(model)})")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Upstream model service is currently unstable. Please try again later.",
+            ) from e
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Inference Proxy Error: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+
+    async def estimate_request_cost(self, model: str, messages: List[Dict[str, Any]]) -> float:
+        """
+        Estimates cost. Runs CPU-bound token counting in a thread to avoid blocking.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._estimate_sync, model, messages)
+
+    def _estimate_sync(self, model: str, messages: List[Dict[str, Any]]) -> float:
+        try:
+            input_tokens = litellm.token_counter(model=model, messages=messages)
+
+            try:
+                cost_info = litellm.model_cost.get(model)
+                if not cost_info:
+                    raise ValueError("Model cost not found")
+                input_cost_per_token = float(cost_info.get("input_cost_per_token", 0.0))
+                output_cost_per_token = float(cost_info.get("output_cost_per_token", 0.0))
+            except Exception:
+                input_cost_per_token = 0.0000005
+                output_cost_per_token = 0.0000015
+
+            estimated_output_tokens = 500
+            total_cost = (float(input_tokens) * input_cost_per_token) + (
+                estimated_output_tokens * output_cost_per_token
+            )
+            return total_cost
+        except Exception:
+            return 0.01
+
+
+# Legacy wrappers
+_service = InferenceProxyService()
 
 
 async def execute_inference_proxy(
     messages: List[Dict[str, Any]], model: str, auc_id: str, user_context: Dict[str, Any] | None = None
 ) -> Any:
-    """
-    Proxies the inference request to the model provider via LiteLLM.
-    Enforces temperature=0.0 and injects seed.
-    """
-    try:
-        # 1. Get API Key
-        # We do this outside the breaker because it's DB access, not external API.
-        api_key = await get_api_key_for_model(auc_id, model)
-
-        # 2. Prepare Parameters
-        # Force deterministic outputs
-        kwargs = {
-            "model": model,
-            "messages": messages,
-            "temperature": 0.0,
-            "seed": user_context.get("seed", 42) if user_context else 42,
-            "api_key": api_key,
-        }
-
-        # 3. Call LiteLLM
-        # litellm.completion is blocking, but supports async via acompletion
-        # We wrap the external call with the Circuit Breaker
-        async with proxy_breaker:
-            response = await litellm.acompletion(**kwargs)
-
-        return response
-
-    except CircuitBreakerOpenError as e:
-        logger.error("Circuit Breaker Open for Inference Proxy")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Upstream model service is currently unstable. Please try again later.",
-        ) from e
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        logger.error(f"Inference Proxy Error: {e}")
-        # Map LiteLLM errors to HTTP status codes if needed
-        # For now, 500
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+    return await _service.execute_inference(messages, model, auc_id, user_context)

@@ -8,27 +8,70 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-from typing import List
+import asyncio
+import uuid
+from typing import Any, Dict, List, Optional, cast
 from uuid import UUID
 
+import httpx
 import jwt
+from fastapi import Header, HTTPException, status
+from loguru import logger
+
 from coreason_adlc_api.auth.schemas import UserIdentity
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import get_pool
-from fastapi import Header, HTTPException, status
-from loguru import logger
+from coreason_adlc_api.utils import get_http_client
 
 __all__ = [
     "UserIdentity",
     "parse_and_validate_token",
     "map_groups_to_projects",
     "upsert_user",
+    "get_oidc_config",
 ]
+
+
+# Global cache for OIDC configuration
+_OIDC_CONFIG_CACHE: Optional[Dict[str, Any]] = None
+_JWKS_CLIENT: Optional[jwt.PyJWKClient] = None
+
+
+async def get_oidc_config() -> Dict[str, Any]:
+    """
+    Fetches OIDC configuration from the discovery endpoint (cached).
+    """
+    global _OIDC_CONFIG_CACHE, _JWKS_CLIENT
+
+    if _OIDC_CONFIG_CACHE:
+        return _OIDC_CONFIG_CACHE
+
+    discovery_url = f"{settings.OIDC_DOMAIN.rstrip('/')}/.well-known/openid-configuration"
+    try:
+        async with get_http_client() as client:
+            resp = await client.get(discovery_url)
+            resp.raise_for_status()
+            config = resp.json()
+            _OIDC_CONFIG_CACHE = config
+
+            # Initialize JWKS Client
+            jwks_uri = config.get("jwks_uri")
+            if jwks_uri:
+                _JWKS_CLIENT = jwt.PyJWKClient(jwks_uri)
+            else:
+                logger.error("OIDC discovery missing jwks_uri")
+
+            return cast(Dict[str, Any], config)
+    except httpx.HTTPError as e:
+        logger.error(f"Failed to fetch OIDC configuration: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Identity Provider unavailable"
+        ) from e
 
 
 async def parse_and_validate_token(authorization: str = Header(..., alias="Authorization")) -> UserIdentity:
     """
-    Parses the Bearer token, validates signature, and extracts identity.
+    Parses the Bearer token, validates signature using RS256 and upstream JWKS, and extracts identity.
     """
     if not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -38,20 +81,65 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
 
     token = authorization.split(" ")[1]
 
-    try:
-        # In production, this should verify against IdP's JWKS
-        payload = jwt.decode(
-            token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM], options={"verify_aud": False}
+    # Ensure OIDC config is loaded (for JWKS client)
+    if _JWKS_CLIENT is None:
+        await get_oidc_config()
+
+    if _JWKS_CLIENT is None:
+        # Fallback if config failed or no JWKS URI
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Authentication service unavailable"
         )
 
-        raw_oid = payload.get("oid")
-        if not raw_oid:
-            raise ValueError("Token missing required claim: oid")
+    try:
+        # Offload blocking network call to thread executor
+        loop = asyncio.get_running_loop()
+        signing_key = await loop.run_in_executor(None, _JWKS_CLIENT.get_signing_key_from_jwt, token)
 
-        oid = UUID(raw_oid)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=settings.OIDC_AUDIENCE,
+            issuer=f"{settings.OIDC_DOMAIN.rstrip('/')}/",
+        )
+
+        # Map claims to UserIdentity
+        # Standard OIDC claims: sub (subject), email, name
+        # Custom claims or group mapping logic required
+
+        # We assume 'sub' maps to 'oid' if it's a UUID, otherwise we might need another strategy.
+        # For now, we'll try to use 'sub' or a custom 'oid' claim if present.
+        # If 'sub' is not a UUID (e.g. Auth0 auth0|...), we might hash it or look it up.
+        # Requirement says: "oid" claim. We'll stick to expectation or fallback to sub.
+
+        raw_oid = payload.get("oid") or payload.get("sub")
+        if not raw_oid:
+            raise ValueError("Token missing required claim: oid or sub")
+
+        # Handle non-UUID subjects (e.g. Auth0 string IDs) by hashing or similar if strict UUID required
+        # But `UserIdentity` expects UUID.
+        # For this implementation, we assume the upstream IdP provides a UUID-compatible ID or we generate one from it?
+        # To be safe and compliant with existing schema, we try to parse UUID.
+        try:
+            oid = UUID(raw_oid)
+        except ValueError:
+            # If not a valid UUID, generate a deterministic UUID from the string ID
+            oid = UUID(int=int(str(uuid.uuid5(uuid.NAMESPACE_DNS, raw_oid)).replace("-", ""), 16))
+
         email = payload.get("email")
-        groups = [UUID(g) for g in payload.get("groups", [])]
         name = payload.get("name")
+
+        # Groups: standard OIDC doesn't always send groups.
+        # We might expect a custom claim 'groups' or 'https://schema.org/groups'
+        # Fallback to empty list if not present.
+        raw_groups = payload.get("groups", [])
+        groups = []
+        for g in raw_groups:
+            try:
+                groups.append(UUID(g))
+            except ValueError:
+                continue  # Skip non-UUID group IDs
 
         return UserIdentity(oid=oid, email=email, groups=groups, full_name=name)
 
@@ -60,7 +148,7 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
     except jwt.InvalidTokenError as e:
         logger.warning(f"Invalid token attempt: {e}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from None
-    except ValueError as e:
+    except Exception as e:
         logger.error(f"Token parsing error: {e}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token claims") from None
 
@@ -70,9 +158,6 @@ async def map_groups_to_projects(group_oids: List[UUID]) -> List[str]:
     Queries identity.group_mappings to determine allowed AUC IDs for the user's groups.
     """
     pool = get_pool()
-
-    # asyncpg requires native python types usually, but UUID is supported.
-    # The query needs to handle the array check.
 
     query = """
         SELECT unnest(allowed_auc_ids) as auc_id

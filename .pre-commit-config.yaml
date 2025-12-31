@@ -28,6 +28,8 @@ repos:
           - types-redis
           - redis
           - litellm
+          - alembic
+          - sqlalchemy
   - repo: https://github.com/AleksaC/hadolint-py
     rev: v2.14.0
     hooks:

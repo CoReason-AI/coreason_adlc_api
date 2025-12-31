@@ -9,113 +9,101 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import time
-from typing import Any, Dict, List, Optional, cast
 
 import litellm
+from fastapi import APIRouter, BackgroundTasks, Depends
+
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
-from coreason_adlc_api.middleware.budget import check_budget_guardrail
+from coreason_adlc_api.middleware.budget import BudgetService
 from coreason_adlc_api.middleware.pii import scrub_pii_payload
-from coreason_adlc_api.middleware.proxy import execute_inference_proxy
-from coreason_adlc_api.middleware.telemetry import async_log_telemetry
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from coreason_adlc_api.middleware.proxy import InferenceProxyService
+from coreason_adlc_api.middleware.telemetry import TelemetryService
+from coreason_adlc_api.routers.schemas import ChatCompletionRequest, ChatCompletionResponse
 
 router = APIRouter(prefix="/chat", tags=["interceptor"])
 
 
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: List[Dict[str, Any]]
-    auc_id: str
-    # Optional context for seed, etc.
-    user_context: Optional[Dict[str, Any]] = None
-    # Estimation can be passed by client or calculated.
-    # Spec BG-01 says "Centralized Budget Control".
-    # We should ideally calculate cost estimate locally (token counting).
-    # But for now, we'll assume a fixed estimate or pass it.
-    # FR-API-005: "If current + estimated > limit".
-    # Let's assume a default small cost if not provided, or client provides it.
-    estimated_cost: float = 0.01
+def get_budget_service() -> BudgetService:
+    return BudgetService()
 
 
-@router.post("/completions")
+def get_proxy_service() -> InferenceProxyService:
+    return InferenceProxyService()
+
+
+def get_telemetry_service() -> TelemetryService:
+    return TelemetryService()
+
+
+@router.post("/completions", response_model=ChatCompletionResponse)
 async def chat_completions(
     request: ChatCompletionRequest,
+    background_tasks: BackgroundTasks,
     user: UserIdentity = Depends(parse_and_validate_token),
-) -> Dict[str, Any]:
+    budget_service: BudgetService = Depends(get_budget_service),
+    proxy_service: InferenceProxyService = Depends(get_proxy_service),
+    telemetry_service: TelemetryService = Depends(get_telemetry_service),
+) -> ChatCompletionResponse:
     """
     The Interceptor: Budget -> Proxy -> Scrub -> Log.
     """
     start_time = time.time()
 
-    # 1. Budget Gatekeeper
-    # This is blocking.
-    check_budget_guardrail(user.oid, request.estimated_cost)
+    # Convert Pydantic models to list of dicts for internal use
+    # We use model_dump for V2, but let's check Pydantic version if needed.
+    # Assuming V2 based on pyproject.toml
+    messages_dicts = [m.model_dump(exclude_none=True) for m in request.messages]
 
-    # 2. PII Scrubbing (Input)
-    # Spec says: "The API must pass the raw request_payload... to Presidio."
-    # "Replace detected entities... with <REDACTED>."
-    # "Scope: Memory only (do not write raw text to disk)."
-    # We scrub input BEFORE logging, but do we scrub before sending to LLM?
-    # Spec: "Proxy & Determinism: Forward the request to the model provider."
-    # Spec: "In-Memory PII Scrubbing... Replace detected entities... Scope: Memory only"
-    # Usually we want to scrub input sent to LLM if it's external (Data Leakage Prevention).
-    # "The coreason-adlc-api acts as the Governance Enforcement Layer..."
-    # "Toxic Telemetry Prevention... scrub data in-stream before it rests in the database."
-    # It doesn't explicitly say "Scrub before sending to LLM".
-    # It says "Logic Flow: Request -> Budget -> LiteLLM -> Presidio -> Redis".
-    # This implies Presidio runs AFTER LiteLLM?
-    # Table FR-API-007: "Pass raw request... and response... to Presidio."
-    # Table FR-API-008: "Push Scrubbed payloads... to Redis."
-    # This implies we scrub primarily for LOGGING (Telemetry).
-    # If we scrubbed before LiteLLM, the LLM wouldn't work well (context lost).
-    # Unless "Data Loss Prevention" is the goal.
-    # BG-02 says "Eliminate legal liability of storing PII in permanent logs."
-    # So the main goal is scrubbing LOGS.
-    # So we send RAW to LLM, but log SCRUBBED.
+    # 1. Budget Gatekeeper
+    # We calculate estimated cost server-side to prevent bypass.
+    # Offloaded to thread in proxy service
+    server_estimated_cost = await proxy_service.estimate_request_cost(request.model, messages_dicts)
+
+    # This is blocking (redis call), but async
+    await budget_service.check_budget_guardrail(user.oid, server_estimated_cost)
+
+    # 2. PII Scrubbing (Input) - Telemetry only
+    # See previous notes: we send RAW to LLM for functionality, scrub logs for compliance.
 
     # 3. Inference Proxy
     # We send raw messages to LLM.
     try:
-        response = await execute_inference_proxy(
-            messages=request.messages,
+        response = await proxy_service.execute_inference(
+            messages=messages_dicts,
             model=request.model,
             auc_id=request.auc_id,
             user_context=request.user_context,
         )
     except Exception:
-        # If proxy fails, we might still want to log the attempt?
-        # But for now, we just raise.
         raise
 
     # 4. Extract Response Text
-    # LiteLLM returns OpenAI format.
     try:
         response_content = response["choices"][0]["message"]["content"]
     except (KeyError, TypeError, IndexError):
         response_content = ""
 
     # 5. PII Scrubbing (for Telemetry)
-    # We scrub both Request (Input) and Response (Output)
-    # We need to flatten messages to string for scrubbing/logging?
-    # Or scrub structure?
-    # `scrub_pii_payload` takes `str`.
-    # Let's simple-concat input messages for logging.
-    input_text = "\n".join([m.get("content", "") for m in request.messages])
+    # Flatten messages to string for scrubbing/logging
+    input_text = "\n".join([m.get("content", "") for m in messages_dicts])
 
-    scrubbed_input = scrub_pii_payload(input_text) or ""
-    scrubbed_output = scrub_pii_payload(response_content) or ""
+    scrubbed_input = await scrub_pii_payload(input_text) or ""
+    scrubbed_output = await scrub_pii_payload(response_content) or ""
 
     # 6. Async Telemetry Logging
     latency_ms = int((time.time() - start_time) * 1000)
-    # Calculate real cost from usage if available
-    real_cost = request.estimated_cost  # Default to estimate
+
+    # Calculate real cost from usage if available, else estimate
+    real_cost = server_estimated_cost
     try:
+        # We can't use litellm.completion_cost on a raw dict easily without the right object structure
+        # But litellm handles dicts often.
         real_cost = litellm.completion_cost(completion_response=response)
     except Exception:
-        pass  # Fallback to estimate if calculation fails
+        pass
 
-    await async_log_telemetry(
+    background_tasks.add_task(
+        telemetry_service.async_log_telemetry,
         user_id=user.oid,
         auc_id=request.auc_id,
         model_name=request.model,
@@ -124,19 +112,4 @@ async def chat_completions(
         metadata={"cost_usd": real_cost, "latency_ms": latency_ms},
     )
 
-    # Return raw response to user?
-    # Or scrubbed?
-    # "acts as Governance Enforcement Layer..."
-    # BG-02: "Eliminate legal liability of storing PII in permanent logs."
-    # Does NOT say "Prevent User from seeing PII".
-    # Usually users are allowed to see what they generated.
-    # But if "Toxic Telemetry Prevention" is the goal, then we only scrub logs.
-    # However, if "Data Plane" (Tier 3) is sensitive...
-    # I will assume we return the RAW response to the user (Client), but scrub the LOGS.
-    # Wait, if we return raw response, then the client has PII.
-    # "The Client (Streamlit) connects strictly to Middleware."
-    # If the user put PII in, they get PII out.
-    # The requirement emphasizes "storing PII in permanent logs".
-    # I will return the raw response object from LiteLLM.
-
-    return cast(Dict[str, Any], response)
+    return ChatCompletionResponse(**response)

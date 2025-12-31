@@ -31,21 +31,11 @@ async def telemetry_worker() -> None:
         try:
             # BLPOP blocks until an item is available
             # Returns (key, element) tuple. Timeout=0 means block indefinitely.
-            # In asyncio, we might want a shorter timeout to allow checking for cancellation?
-            # Or use run_in_executor for the blocking call if redis-py isn't async?
-            # redis-py's `Redis` client is synchronous. `AsyncCircuitBreaker` and others suggest
-            # we might be using synchronous Redis or need to handle blocking carefully.
-            # However, `get_redis_client` returns `redis.Redis` which is blocking.
-            # Ideally we should use `redis.asyncio.Redis` for async apps.
-            # Checking `utils.py`...
+            # In asyncio, we use the async client's blpop which yields control.
 
-            # For this iteration, assuming standard Redis client.
-            # We can use `client.blpop` with a timeout (e.g., 1 sec) to yield control back to the loop.
-            # But `blpop` is blocking. We should run it in a thread or use async client.
-            # The codebase seems to use standard `redis` (sync).
-            # To avoid blocking the event loop, we should use `run_in_executor`.
-
-            result = await asyncio.to_thread(client.blpop, "telemetry_queue", timeout=1)
+            # Using a short timeout (1s) to allow loop cancellation checks cleanly if needed,
+            # though asyncio.CancelledError handles task cancellation points too.
+            result = await client.blpop("telemetry_queue", timeout=1)
 
             if not result:
                 continue
