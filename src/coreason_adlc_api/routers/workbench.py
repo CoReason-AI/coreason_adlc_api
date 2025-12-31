@@ -86,14 +86,6 @@ async def _get_user_roles(session: AsyncSession, group_oids: list[UUID]) -> list
     if not group_oids:
         return []
 
-    stmt = text("SELECT role_name FROM identity.group_mappings WHERE sso_group_oid IN :group_oids")
-    # SQLAlchemy `IN` clause requires a tuple for params usually, or manual expansion.
-    # Or cleaner: using `ANY` with array if using postgres dialect, but let's try tuple expansion which is safer standard sql
-    # or rely on internal implementation.
-
-    # Actually, SQLAlchemy 1.4+ handles list expansion if we use .in_() with ORM, but for text() we often need
-    # specific handling or use bindparam(expanding=True).
-    # Easier way for PostgreSQL specific:
     stmt = text("SELECT role_name FROM identity.group_mappings WHERE sso_group_oid = ANY(:group_oids)")
 
     result = await session.execute(stmt, {"group_oids": group_oids})

@@ -202,6 +202,8 @@ async def transition_draft_status(
     await session.commit()
 
     updated_row = result.mappings().fetchone()
+    if not updated_row:
+        raise HTTPException(status_code=404, detail="Draft not found")
 
     res_dict = dict(updated_row)
     # Locking info might be null if we didn't join, but the table has the columns.

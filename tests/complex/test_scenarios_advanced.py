@@ -41,7 +41,7 @@ async def test_conflicting_safe_view_vs_edit(mock_db_session: AsyncMock) -> None
     # State
     lock_state = {"locked_by": user_a, "expiry": datetime.now(timezone.utc) + timedelta(seconds=30)}
 
-    def execute_side_effect(stmt, params=None) -> MagicMock:
+    def execute_side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
         mock_res = MagicMock(spec=Result)
 
