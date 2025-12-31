@@ -178,10 +178,9 @@ async def transition_draft_status(
         allowed = True
     elif current_status == ApprovalStatus.REJECTED and new_status == ApprovalStatus.PENDING:
         allowed = True
-    elif current_status == ApprovalStatus.PENDING and new_status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
-        # Check permissions for approval/rejection (Manager only)
-        # This function assumes the caller checks roles, but we can double check here if needed.
-        # For now, we rely on the router to check for MANAGER role.
+    elif current_status == ApprovalStatus.PENDING and new_status == ApprovalStatus.APPROVED:
+        allowed = True
+    elif current_status == ApprovalStatus.PENDING and new_status == ApprovalStatus.REJECTED:
         allowed = True
     else:
         allowed = False
