@@ -151,8 +151,9 @@ async def parse_and_validate_token(
         return UserIdentity(oid=oid, email=email, groups=groups, full_name=name)
 
     except jwt.ExpiredSignatureError:
-        # pragma: no cover
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired") from None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired"
+        ) from None  # pragma: no cover
     except jwt.InvalidTokenError as e:
         logger.warning(f"Invalid token attempt: {e}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from None
