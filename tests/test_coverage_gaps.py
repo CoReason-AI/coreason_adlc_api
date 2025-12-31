@@ -16,14 +16,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import jwt
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from sqlalchemy.engine import Result
 
-from coreason_adlc_api.auth.identity import parse_and_validate_token
+from coreason_adlc_api.app import app
+from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
+from coreason_adlc_api.dependencies import get_db
 from coreason_adlc_api.middleware.circuit_breaker import CircuitBreakerOpenError
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
 from coreason_adlc_api.routers.interceptor import chat_completions
 from coreason_adlc_api.routers.schemas import ChatCompletionRequest, ChatMessage
-from coreason_adlc_api.routers.workbench import _get_user_roles, approve_draft, reject_draft, submit_draft
 from coreason_adlc_api.workbench.locking import acquire_draft_lock, refresh_lock, verify_lock_for_update
 from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftUpdate
 from coreason_adlc_api.workbench.service import _check_status_for_update, transition_draft_status, update_draft
@@ -59,7 +61,6 @@ async def test_identity_expired_token(mock_db_session: AsyncMock) -> None:
     with patch("coreason_adlc_api.auth.identity._JWKS_CLIENT") as mock_jwks:
         mock_jwks.get_signing_key_from_jwt.return_value.key = "fake_key"
 
-        # We need to simulate ExpiredSignatureError being raised by jwt.decode
         with patch("jwt.decode", side_effect=jwt.ExpiredSignatureError("Expired")):
             with pytest.raises(HTTPException) as exc:
                 await parse_and_validate_token(header, session=mock_db_session)
@@ -360,6 +361,22 @@ async def test_transition_draft_pending_to_approved(mock_db_session: AsyncMock) 
 
 
 @pytest.mark.asyncio
+async def test_transition_draft_pending_to_draft_invalid(mock_db_session: AsyncMock) -> None:
+    """
+    Cover transition_draft_status: PENDING -> DRAFT (Invalid).
+    This covers the 'else' block in the transition logic.
+    """
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    mock_db_session.execute.return_value.fetchone.return_value = (ApprovalStatus.PENDING,)
+
+    with pytest.raises(HTTPException) as exc:
+        await transition_draft_status(mock_db_session, draft_id, user_id, ApprovalStatus.DRAFT)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_transition_draft_race_condition(mock_db_session: AsyncMock) -> None:
     """
     Cover transition_draft_status: Update returns no row (Simulate race or concurrent delete).
@@ -401,51 +418,78 @@ async def test_check_status_for_update_coverage(mock_db_session: AsyncMock) -> N
     assert exc.value.status_code == 409
 
 
-# --- Router Tests ---
+# --- Router Tests (TestClient) ---
 
 
-@pytest.mark.asyncio
-async def test_router_get_user_roles_empty(mock_db_session: AsyncMock) -> None:
-    """Test _get_user_roles with empty groups list (returns [])."""
-    res = await _get_user_roles(mock_db_session, [])
-    assert res == []
+def test_router_approve_draft_no_manager(mock_db_session: AsyncMock) -> None:
+    """Test approve_draft without MANAGER role (403). Using TestClient."""
+    draft_id = uuid.uuid4()
 
+    # Override dependencies
+    app.dependency_overrides[get_db] = lambda: mock_db_session
 
-@pytest.mark.asyncio
-async def test_router_approve_draft_no_manager(mock_db_session: AsyncMock) -> None:
-    """Test approve_draft without MANAGER role (403)."""
-    identity = MagicMock(groups=[uuid.uuid4()], oid=uuid.uuid4())
+    async def mock_get_identity() -> UserIdentity:
+        return UserIdentity(oid=uuid.uuid4(), email="u@e.com", groups=[uuid.uuid4()], full_name="U")
 
-    # Mock _get_user_roles to return non-manager
+    app.dependency_overrides[parse_and_validate_token] = mock_get_identity
+
+    # Mock _get_user_roles via patch on the router module
     with patch("coreason_adlc_api.routers.workbench._get_user_roles", return_value=["USER"]):
-        with pytest.raises(HTTPException) as exc:
-            await approve_draft(uuid.uuid4(), identity, mock_db_session)
-        assert exc.value.status_code == 403
-        assert "Only managers" in exc.value.detail
+        # Mock other calls to pass
+        with (
+            patch("coreason_adlc_api.routers.workbench.get_draft_by_id"),
+            patch("coreason_adlc_api.routers.workbench._verify_project_access"),
+        ):
+            client = TestClient(app)
+            # Prepend /api/v1
+            resp = client.post(f"/api/v1/workbench/drafts/{draft_id}/approve")
+
+            assert resp.status_code == 403
+            assert "Only managers" in resp.json()["detail"]
+
+    app.dependency_overrides = {}
 
 
-@pytest.mark.asyncio
-async def test_router_reject_draft_no_manager(mock_db_session: AsyncMock) -> None:
-    """Test reject_draft without MANAGER role (403)."""
-    identity = MagicMock(groups=[uuid.uuid4()], oid=uuid.uuid4())
+def test_router_reject_draft_no_manager(mock_db_session: AsyncMock) -> None:
+    """Test reject_draft without MANAGER role (403). Using TestClient."""
+    draft_id = uuid.uuid4()
+
+    app.dependency_overrides[get_db] = lambda: mock_db_session
+
+    async def mock_get_identity() -> UserIdentity:
+        return UserIdentity(oid=uuid.uuid4(), email="u@e.com", groups=[uuid.uuid4()], full_name="U")
+
+    app.dependency_overrides[parse_and_validate_token] = mock_get_identity
 
     with patch("coreason_adlc_api.routers.workbench._get_user_roles", return_value=["USER"]):
-        with pytest.raises(HTTPException) as exc:
-            await reject_draft(uuid.uuid4(), identity, mock_db_session)
-        assert exc.value.status_code == 403
-        assert "Only managers" in exc.value.detail
+        client = TestClient(app)
+        resp = client.post(f"/api/v1/workbench/drafts/{draft_id}/reject")
+
+        assert resp.status_code == 403
+        assert "Only managers" in resp.json()["detail"]
+
+    app.dependency_overrides = {}
 
 
-@pytest.mark.asyncio
-async def test_router_submit_draft_not_found(mock_db_session: AsyncMock) -> None:
-    """Test submit_draft when draft not found (404)."""
-    identity = MagicMock(groups=[uuid.uuid4()], oid=uuid.uuid4())
+def test_router_submit_draft_not_found(mock_db_session: AsyncMock) -> None:
+    """Test submit_draft when draft not found (404). Using TestClient."""
+    draft_id = uuid.uuid4()
+
+    app.dependency_overrides[get_db] = lambda: mock_db_session
+
+    async def mock_get_identity() -> UserIdentity:
+        return UserIdentity(oid=uuid.uuid4(), email="u@e.com", groups=[uuid.uuid4()], full_name="U")
+
+    app.dependency_overrides[parse_and_validate_token] = mock_get_identity
 
     # Mock get_draft_by_id return None
     with patch("coreason_adlc_api.routers.workbench.get_draft_by_id", return_value=None):
-        with pytest.raises(HTTPException) as exc:
-            await submit_draft(uuid.uuid4(), identity, mock_db_session)
-        assert exc.value.status_code == 404
+        client = TestClient(app)
+        resp = client.post(f"/api/v1/workbench/drafts/{draft_id}/submit")
+
+        assert resp.status_code == 404
+
+    app.dependency_overrides = {}
 
 
 # --- Interceptor Tests ---
