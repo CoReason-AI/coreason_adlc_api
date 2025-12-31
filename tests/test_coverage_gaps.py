@@ -253,6 +253,36 @@ async def test_transition_draft_pending_to_approved(mock_db_session: AsyncMock) 
 
 
 @pytest.mark.asyncio
+async def test_transition_draft_pending_to_draft_invalid(mock_db_session: AsyncMock) -> None:
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    mock_db_session.execute.return_value.fetchone.return_value = (ApprovalStatus.PENDING,)
+    with pytest.raises(HTTPException) as exc:
+        await transition_draft_status(mock_db_session, draft_id, user_id, ApprovalStatus.DRAFT)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_transition_draft_race_condition(mock_db_session: AsyncMock) -> None:
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    def side_effect(stmt: Any, params: Any = None) -> MagicMock:
+        query = str(stmt)
+        res = MagicMock(spec=Result)
+        if "SELECT status" in query:
+            res.fetchone.return_value = (ApprovalStatus.DRAFT,)
+        elif "UPDATE workbench.agent_drafts" in query:
+            res.mappings.return_value.fetchone.return_value = None
+        return res
+
+    mock_db_session.execute.side_effect = side_effect
+    with pytest.raises(HTTPException) as exc:
+        await transition_draft_status(mock_db_session, draft_id, user_id, ApprovalStatus.PENDING)
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_check_status_for_update_coverage(mock_db_session: AsyncMock) -> None:
     mock_db_session.execute.return_value.fetchone.return_value = None
     with pytest.raises(HTTPException) as exc:
@@ -333,7 +363,6 @@ def test_router_submit_draft_success(mock_db_session: AsyncMock) -> None:
     )
     mock_draft_pending = mock_draft.model_copy(update={"status": ApprovalStatus.PENDING})
 
-    # We break up the patch lines to keep them under 120 chars
     p1 = patch("coreason_adlc_api.routers.workbench.get_draft_by_id", return_value=mock_draft)
     p2 = patch("coreason_adlc_api.routers.workbench._verify_project_access")
     p3 = patch("coreason_adlc_api.routers.workbench.transition_draft_status", return_value=mock_draft_pending)
