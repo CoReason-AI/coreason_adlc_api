@@ -245,11 +245,13 @@ async def test_update_draft_not_found_router(mock_auth_header: str) -> None:
 
 @pytest.mark.asyncio
 async def test_get_user_roles_helper() -> None:
-    mock_pool = AsyncMock()
-    mock_pool.fetch.return_value = [{"role_name": "MANAGER"}]
-    with patch("coreason_adlc_api.routers.workbench.get_pool", return_value=mock_pool):
-        roles = await _get_user_roles([uuid.uuid4()])
-        assert roles == ["MANAGER"]
+    mock_session = AsyncMock()
+    # Mock result execute return value
+    # For _get_user_roles, we expect result rows to be tuples (role_name,)
+    mock_session.execute.return_value.__iter__.return_value = [("MANAGER",)]
+
+    roles = await _get_user_roles(mock_session, [uuid.uuid4()])
+    assert roles == ["MANAGER"]
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,7 @@
 import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -37,14 +37,14 @@ async def test_race_condition_lock_acquisition(mock_db_session: AsyncMock) -> No
     bob_id = uuid.uuid4()
 
     # State tracking to simulate DB race
-    lock_state = {"locked_by": None, "expiry": None}
+    lock_state: dict[str, Any] = {"locked_by": None, "expiry": None}
 
-    def create_result(row):
+    def create_result(row: Any) -> MagicMock:
         mock_res = MagicMock(spec=Result)
         mock_res.fetchone.return_value = row
         return mock_res
 
-    async def execute_side_effect(stmt, params=None) -> MagicMock:
+    async def execute_side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
         if "SELECT locked_by_user" in query:
              # Return current state.
@@ -116,8 +116,10 @@ async def test_zombie_lock_takeover(mock_db_session: AsyncMock) -> None:
     assert mock_db_session.execute.call_count >= 2
 
     # Check the update call params
-    update_call = [c for c in mock_db_session.execute.call_args_list if "UPDATE workbench.agent_drafts" in str(c[0][0])][0]
-    params = update_call[0][1] # Second arg is params dict
+    update_call = [
+        c for c in mock_db_session.execute.call_args_list if "UPDATE workbench.agent_drafts" in str(c[0][0])
+    ][0]
+    params = update_call[0][1]  # Second arg is params dict
     assert params["user_uuid"] == user_b
 
 
@@ -189,11 +191,12 @@ async def test_huge_payload_handling(mock_db_session: AsyncMock) -> None:
     }
     # Mock mappings().fetchone() behavior
     # We need to simulate the Result object properly
-    mock_res.fetchone.return_value = tuple(row.values())
-    mock_res.keys.return_value = list(row.keys())
+    mock_res.mappings.return_value.fetchone.return_value = row
 
-    # We need to ensure that when we access the row, it works for dict(zip(keys, row))
-    # In service.py we did `dict(result.keys().__class__(row, result.keys()))`
+    # Also support dict(row) behavior if needed by implementation
+    # But since service uses dict(row), and row is the return value of fetchone(),
+    # row MUST be something that can be passed to dict().
+    # The current mock 'row' is a dict. dict(dict) works.
 
     mock_db_session.execute.return_value = mock_res
 

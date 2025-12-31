@@ -78,10 +78,12 @@ async def test_get_draft_safe_view_integration(mock_oidc_factory: Any) -> None:
             assert data["draft_id"] == str(draft_id)
 
             # Verify service was called with roles
+            # get_draft_by_id(session, draft_id, user_uuid, roles)
+            # args[0] is session, args[1] is draft_id, args[2] is user_uuid
             args, _ = mock_service.call_args
-            assert args[0] == draft_id
-            assert args[1] == uuid.UUID(manager_uuid)
-            assert "MANAGER" in args[2]
+            assert args[1] == draft_id
+            assert args[2] == uuid.UUID(manager_uuid)
+            assert "MANAGER" in args[3]
 
 
 @pytest.mark.asyncio

@@ -22,7 +22,9 @@ from coreason_adlc_api.vault.crypto import VaultCrypto
 vault_crypto = VaultCrypto()
 
 
-async def store_secret(session: AsyncSession, auc_id: str, service_name: str, raw_api_key: str, user_uuid: UUID) -> UUID:
+async def store_secret(
+    session: AsyncSession, auc_id: str, service_name: str, raw_api_key: str, user_uuid: UUID
+) -> UUID:
     """
     Encrypts and stores an API key for a specific Project (AUC) and Service.
     """
@@ -39,17 +41,20 @@ async def store_secret(session: AsyncSession, auc_id: str, service_name: str, ra
     """)
 
     try:
-        result = await session.execute(stmt, {
-            "auc_id": auc_id,
-            "service_name": service_name,
-            "encrypted_value": encrypted_value,
-            "user_uuid": user_uuid
-        })
+        result = await session.execute(
+            stmt,
+            {
+                "auc_id": auc_id,
+                "service_name": service_name,
+                "encrypted_value": encrypted_value,
+                "user_uuid": user_uuid,
+            },
+        )
         await session.commit()
         row = result.fetchone()
         if not row:
             raise RuntimeError("Insert failed to return ID")
-        return row[0]
+        return UUID(str(row[0]))
     except Exception as e:
         logger.error(f"Failed to store secret for {auc_id}/{service_name}: {e}")
         await session.rollback()

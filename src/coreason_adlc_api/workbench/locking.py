@@ -111,7 +111,7 @@ async def refresh_lock(session: AsyncSession, draft_id: UUID, user_uuid: UUID) -
     await session.commit()
 
     # Check if any row was updated
-    if result.rowcount == 0:
+    if result.rowcount == 0:  # type: ignore
         # Either draft doesn't exist, or user doesn't hold the lock
         # Check existence
         check_stmt = text("SELECT locked_by_user FROM workbench.agent_drafts WHERE draft_id = :draft_id")

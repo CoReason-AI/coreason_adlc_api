@@ -34,32 +34,23 @@ async def create_draft(session: AsyncSession, draft: DraftCreate, user_uuid: UUI
         VALUES (:user_uuid, :auc_id, :title, :oas_content, :runtime_env)
         RETURNING *;
     """)
-    result = await session.execute(stmt, {
-        "user_uuid": user_uuid,
-        "auc_id": draft.auc_id,
-        "title": draft.title,
-        "oas_content": json.dumps(draft.oas_content),
-        "runtime_env": draft.runtime_env
-    })
+    result = await session.execute(
+        stmt,
+        {
+            "user_uuid": user_uuid,
+            "auc_id": draft.auc_id,
+            "title": draft.title,
+            "oas_content": json.dumps(draft.oas_content),
+            "runtime_env": draft.runtime_env,
+        },
+    )
     await session.commit()
 
-    row = result.fetchone()
+    row = result.mappings().fetchone()
     if not row:
         raise RuntimeError("Failed to create draft")
 
-    # row is a tuple, but DraftResponse.model_validate expects a dict or object with attributes
-    # We need to map column names. Since we did RETURNING *, we need to know the order or use mappings().
-    # Using mappings() is safer.
-
-    # Re-execute to get mappings or fetch mappings from result
-    # result.mappings() returns a Result object that yields RowMapping
-    # But fetchone() returns a Row object which behaves like a tuple.
-    # Let's use result.mappings().fetchone()
-    # Wait, I already consumed the result with fetchone().
-    # Let's adjust the execution.
-
-    # Actually, let's fix the above execution flow.
-    return DraftResponse.model_validate(dict(result.keys().__class__(row, result.keys())))
+    return DraftResponse.model_validate(dict(row))
 
 
 
@@ -75,7 +66,9 @@ async def get_drafts(session: AsyncSession, auc_id: str, include_deleted: bool =
     return [DraftResponse.model_validate(dict(r)) for r in rows]
 
 
-async def get_draft_by_id(session: AsyncSession, draft_id: UUID, user_uuid: UUID, roles: List[str]) -> Optional[DraftResponse]:
+async def get_draft_by_id(
+    session: AsyncSession, draft_id: UUID, user_uuid: UUID, roles: List[str]
+) -> Optional[DraftResponse]:
     # Try to acquire lock
     try:
         mode = await acquire_draft_lock(session, draft_id, user_uuid, roles)
@@ -161,7 +154,9 @@ async def update_draft(session: AsyncSession, draft_id: UUID, update: DraftUpdat
     return DraftResponse.model_validate(dict(row))
 
 
-async def transition_draft_status(session: AsyncSession, draft_id: UUID, user_uuid: UUID, new_status: ApprovalStatus) -> DraftResponse:
+async def transition_draft_status(
+    session: AsyncSession, draft_id: UUID, user_uuid: UUID, new_status: ApprovalStatus
+) -> DraftResponse:
     """
     Handles state transitions:
     - DRAFT -> PENDING (Submit)

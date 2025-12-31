@@ -59,7 +59,8 @@ class InferenceProxyService:
             if not row:
                 logger.error(f"No API key found for project {auc_id} service {provider}")
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail=f"API Key not configured for {provider} in this project."
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"API Key not configured for {provider} in this project.",
                 )
 
             encrypted_value = row[0]

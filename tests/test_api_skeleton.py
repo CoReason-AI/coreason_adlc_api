@@ -66,14 +66,10 @@ def test_main_no_args(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_lifespan() -> None:
     """Verify lifespan logs startup and shutdown and handles DB init."""
-    # We must mock init_db and close_db to prevent actual DB connection
-    with patch("coreason_adlc_api.app.init_db", new=AsyncMock()) as mock_init:
-        with patch("coreason_adlc_api.app.close_db", new=AsyncMock()) as mock_close:
-            with patch("coreason_adlc_api.app.telemetry_worker", new=AsyncMock()) as mock_worker:
-                with TestClient(app) as _:
-                    # Trigger startup
-                    pass
+    # DB init/close calls removed from app.py, so we just check worker
+    with patch("coreason_adlc_api.app.telemetry_worker", new=AsyncMock()) as mock_worker:
+        with TestClient(app) as _:
+            # Trigger startup
+            pass
 
-                mock_init.assert_called_once()
-                mock_close.assert_called_once()
-                mock_worker.assert_called_once()
+        mock_worker.assert_called_once()

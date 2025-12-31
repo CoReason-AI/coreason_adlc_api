@@ -100,13 +100,15 @@ async def test_telemetry_worker_malformed_and_empty_data(capture_logs: LogCaptur
         asyncio.CancelledError(),  # Case 5: Stop
     ]
 
-    # Mock DB Pool
-    mock_pool = MagicMock()
-    mock_pool.execute = AsyncMock()
+    # Mock DB Session
+    mock_session_factory = MagicMock()
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session_factory.return_value.__aexit__.return_value = None
 
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_client),
-        patch("coreason_adlc_api.telemetry.worker.get_pool", return_value=mock_pool),
+        patch("coreason_adlc_api.telemetry.worker.async_session_factory", mock_session_factory),
     ):
         await telemetry_worker()
 
@@ -118,10 +120,11 @@ async def test_telemetry_worker_malformed_and_empty_data(capture_logs: LogCaptur
     )
 
     # 2. Should have called DB execute exactly once (for the valid payload)
-    assert mock_pool.execute.call_count == 1
-    args = mock_pool.execute.call_args[0]
-    # args[0] is query, args[1] is user_uuid, args[2] is auc_id, args[3] is model_name
-    assert args[2] == "test-auc"
+    assert mock_session.execute.call_count == 1
+    args, _ = mock_session.execute.call_args
+    params = args[1]
+    # args[0] is query, args[1] is params dict
+    assert params["auc_id"] == "test-auc"
 
 
 @pytest.mark.asyncio
@@ -139,11 +142,11 @@ async def test_telemetry_worker_redis_down(capture_logs: LogCapture) -> None:
         asyncio.CancelledError(),
     ]
 
-    mock_pool = MagicMock()
+    mock_session_factory = MagicMock()
 
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_client),
-        patch("coreason_adlc_api.telemetry.worker.get_pool", return_value=mock_pool),
+        patch("coreason_adlc_api.telemetry.worker.async_session_factory", mock_session_factory),
         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
     ):
         await telemetry_worker()

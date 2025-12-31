@@ -12,7 +12,7 @@ from coreason_adlc_api.workbench.service import assemble_artifact, publish_artif
 
 
 @pytest.mark.asyncio
-async def test_assemble_artifact_success() -> None:
+async def test_assemble_artifact_success(mock_db_session: AsyncMock) -> None:
     draft_id = uuid4()
     user_id = uuid4()
 
@@ -30,7 +30,7 @@ async def test_assemble_artifact_success() -> None:
     with patch("coreason_adlc_api.workbench.service.get_draft_by_id", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_draft
 
-        artifact = await assemble_artifact(draft_id, user_id)
+        artifact = await assemble_artifact(mock_db_session, draft_id, user_id)
 
         assert artifact.id == draft_id
         assert artifact.version == "1.0.0"
@@ -38,16 +38,16 @@ async def test_assemble_artifact_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_assemble_artifact_not_found() -> None:
+async def test_assemble_artifact_not_found(mock_db_session: AsyncMock) -> None:
     with patch("coreason_adlc_api.workbench.service.get_draft_by_id", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = None
         with pytest.raises(HTTPException) as e:
-            await assemble_artifact(uuid4(), uuid4())
+            await assemble_artifact(mock_db_session, uuid4(), uuid4())
         assert e.value.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_assemble_artifact_not_approved() -> None:
+async def test_assemble_artifact_not_approved(mock_db_session: AsyncMock) -> None:
     mock_draft = DraftResponse(
         draft_id=uuid4(),
         user_uuid=uuid4(),
@@ -61,12 +61,12 @@ async def test_assemble_artifact_not_approved() -> None:
     with patch("coreason_adlc_api.workbench.service.get_draft_by_id", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_draft
         with pytest.raises(ValueError) as e:
-            await assemble_artifact(uuid4(), uuid4())
+            await assemble_artifact(mock_db_session, uuid4(), uuid4())
         assert "must be APPROVED" in str(e.value)
 
 
 @pytest.mark.asyncio
-async def test_publish_artifact_flow() -> None:
+async def test_publish_artifact_flow(mock_db_session: AsyncMock) -> None:
     draft_id = uuid4()
     user_id = uuid4()
 
@@ -76,7 +76,7 @@ async def test_publish_artifact_flow() -> None:
         mock_artifact.id = draft_id
         mock_assemble.return_value = mock_artifact
 
-        url = await publish_artifact(draft_id, "signature", user_id)
+        url = await publish_artifact(mock_db_session, draft_id, "signature", user_id)
 
         assert mock_artifact.author_signature == "signature"
         assert f"/agents/{draft_id}/v1" in url

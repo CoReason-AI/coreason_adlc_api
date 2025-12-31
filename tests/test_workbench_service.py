@@ -9,7 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import uuid
-from typing import Generator
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -131,7 +131,7 @@ async def test_update_draft_logic(mock_db_session: AsyncMock) -> None:
     # 1. _check_status_for_update (SELECT status)
     # 2. update_draft (UPDATE query) -> Updated Row
 
-    def execute_side_effect(stmt, params=None):
+    def execute_side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
         mock_res = MagicMock(spec=Result)
 
@@ -178,7 +178,7 @@ async def test_update_draft_no_fields(mock_db_session: AsyncMock) -> None:
     # 2. check_status
     # 3. get_draft_by_id (if no fields)
 
-    def execute_side_effect(stmt, params=None):
+    def execute_side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
         mock_res = MagicMock(spec=Result)
 
@@ -219,7 +219,7 @@ async def test_update_draft_no_fields(mock_db_session: AsyncMock) -> None:
 async def test_update_draft_not_found(mock_db_session: AsyncMock) -> None:
     # Case: Update with fields, but row not found
 
-    def execute_side_effect(stmt, params=None):
+    def execute_side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
         mock_res = MagicMock(spec=Result)
 
@@ -243,7 +243,7 @@ async def test_update_draft_not_found(mock_db_session: AsyncMock) -> None:
 async def test_update_draft_no_fields_not_found(mock_db_session: AsyncMock) -> None:
     # Case: No fields, but draft lookup fails
 
-    def execute_side_effect(stmt, params=None):
+    def execute_side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
         mock_res = MagicMock(spec=Result)
 
