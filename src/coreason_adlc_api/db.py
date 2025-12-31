@@ -8,74 +8,55 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import json
+from typing import AsyncGenerator
 
-import asyncpg
-from asyncpg import Pool
-from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlmodel import SQLModel
 
 from coreason_adlc_api.config import settings
 
-# Global connection pool
-_pool: Pool | None = None
+# Database Connection URL (Async)
+DATABASE_URL = (
+    f"postgresql+asyncpg://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@"
+    f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+)
+
+# Create Async Engine
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=settings.DEBUG,  # Log SQL in debug mode
+    future=True,
+    pool_size=20,
+    max_overflow=10,
+)
+
+# Create Session Factory
+async_session_factory = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
 
-async def init_conn(conn: asyncpg.Connection) -> None:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
-    Initialize a connection (register codecs).
+    FastAPI dependency that yields an async database session.
     """
-    await conn.set_type_codec(
-        "jsonb",
-        encoder=json.dumps,
-        decoder=json.loads,
-        schema="pg_catalog",
-    )
+    async with async_session_factory() as session:
+        yield session
 
 
 async def init_db() -> None:
     """
-    Initializes the PostgreSQL connection pool.
+    Initializes the database.
     """
-    global _pool
-    if _pool:
-        logger.warning("Database pool already initialized.")
-        return
-
-    logger.info(f"Connecting to database at {settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}")
-    try:
-        _pool = await asyncpg.create_pool(
-            user=settings.POSTGRES_USER,
-            password=settings.POSTGRES_PASSWORD,
-            host=settings.POSTGRES_HOST,
-            port=settings.POSTGRES_PORT,
-            database=settings.POSTGRES_DB,
-            min_size=1,
-            max_size=10,
-            init=init_conn,
-        )
-        logger.info("Database connection pool established.")
-
-    except Exception as e:
-        logger.error(f"Failed to connect to database: {e}")
-        raise
+    # Verify connection or initialize models if needed
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda _: None)
 
 
 async def close_db() -> None:
     """
-    Closes the PostgreSQL connection pool.
+    Closes the database connection pool (dispose engine).
     """
-    global _pool
-    if _pool:
-        await _pool.close()
-        _pool = None
-        logger.info("Database connection pool closed.")
-
-
-def get_pool() -> Pool:
-    """
-    Returns the active connection pool.
-    Raises RuntimeError if not initialized.
-    """
-    if not _pool:
-        raise RuntimeError("Database pool is not initialized.")
-    return _pool
+    await engine.dispose()

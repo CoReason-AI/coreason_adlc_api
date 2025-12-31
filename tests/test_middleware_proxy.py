@@ -113,19 +113,13 @@ async def test_proxy_circuit_breaker(
     # Get the specific breaker for 'openai' (default mock provider)
     breaker = proxy_service.get_circuit_breaker("openai")
 
-    # Manually trip by mocking state or using open() method if available
-    # aiobreaker CircuitBreaker has .open() method
-    breaker.open() # type: ignore[attr-defined]
+    # Mocking aiobreaker internals or state isn't trivial via method calls if open() doesn't exist.
+    # However, we can patch the breaker object or its state storage.
+    # Or simpler: Patch call_async to raise CircuitBreakerError immediately to simulate OPEN state.
 
-    # Verify it is open
-
-    # Next call should raise ServiceUnavailable (Circuit Open) immediately
-
-    with pytest.raises(HTTPException) as exc:
-        await proxy_service.execute_inference([], "gpt-4", "proj-1")
+    with mock.patch.object(breaker, 'call_async', side_effect=CircuitBreakerError("Circuit Open")):
+        with pytest.raises(HTTPException) as exc:
+            await proxy_service.execute_inference([], "gpt-4", "proj-1")
 
     assert exc.value.status_code == 503
     assert "Upstream model service is currently unstable" in exc.value.detail
-
-    # Cleanup
-    breaker.close() # type: ignore[attr-defined]

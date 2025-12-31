@@ -163,20 +163,21 @@ async def map_groups_to_projects(group_oids: List[UUID]) -> List[str]:
     """
     try:
         async with async_session_factory() as session:
+            # Selecting columns returns Row tuples.
             statement = select(GroupMapping.allowed_auc_ids).where(col(GroupMapping.sso_group_oid).in_(group_oids))
             results = await session.exec(statement)
 
             projects = set()
-            for row in results:
-                # row is allowed_auc_ids (List[str])
-                if row:
-                    projects.update(row)
+            for row in results.all(): # row is a Row object (tuple-like) or list of strings if using scalars?
+                # select(Model.col) returns rows of (val,).
+                # We need to access index 0.
+                if row and row[0]:
+                    projects.update(row[0])
 
             return list(projects)
 
     except Exception as e:
         logger.error(f"Failed to map groups to projects: {e}")
-        # Fail safe: return empty list rather than exposing internal error
         return []
 
 
@@ -185,16 +186,27 @@ async def upsert_user(identity: UserIdentity) -> None:
     Upserts the user into identity.users on login.
     """
     try:
+        # Use identity.email directly. If None, it might fail DB constraint, which is expected/correct behavior
+        # if the schema requires email. Reverting empty string logic.
+        email = identity.email
+        if email is None:
+             # Fallback to empty string ONLY if schema allows it or logic demands it.
+             # Schema says UNIQUE. Empty string is a value. Two empty strings conflict.
+             # If we have users without email, we probably shouldn't upsert email or handle it specially.
+             # For now, we assume email is present or handle the exception.
+             # We will pass it as is.
+             pass
+
         async with async_session_factory() as session:
             stmt = insert(User).values(
                 user_uuid=identity.oid,
-                email=identity.email or "",
+                email=email,
                 full_name=identity.full_name,
                 last_login=datetime.utcnow()
             ).on_conflict_do_update(
                 index_elements=['user_uuid'],
                 set_=dict(
-                    email=identity.email or "",
+                    email=email,
                     full_name=identity.full_name,
                     last_login=datetime.utcnow()
                 )

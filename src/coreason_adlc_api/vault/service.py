@@ -49,13 +49,17 @@ async def store_secret(auc_id: str, service_name: str, raw_api_key: str, user_uu
             ).returning(Secret.secret_id)
 
             result = await session.exec(stmt) # type: ignore[call-overload]
-            secret_id = result.first()
-            await session.commit()
+            # result is a Result object wrapping Rows (tuples)
+            # We want the scalar value. .first() returns a Row (uuid,) or None.
+            row = result.first()
 
-            if not secret_id:
+            if not row:
                  # Should not happen with upsert returning
                  raise RuntimeError("Upsert failed to return ID")
 
+            # Extract UUID from tuple
+            secret_id = row[0]
+            await session.commit()
             return secret_id
 
     except Exception as e:
