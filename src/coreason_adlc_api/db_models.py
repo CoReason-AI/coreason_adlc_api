@@ -19,7 +19,7 @@ from sqlmodel import Field, SQLModel
 # --- Auth ---
 
 
-class UserIdentityModel(SQLModel, table=True):
+class UserIdentityModel(SQLModel, table=True):  # type: ignore[misc]
     __tablename__ = "users"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -31,7 +31,7 @@ class UserIdentityModel(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class ProjectAccessModel(SQLModel, table=True):
+class ProjectAccessModel(SQLModel, table=True):  # type: ignore[misc]
     __tablename__ = "project_access"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -44,7 +44,7 @@ class ProjectAccessModel(SQLModel, table=True):
 # --- Vault ---
 
 
-class SecretModel(SQLModel, table=True):
+class SecretModel(SQLModel, table=True):  # type: ignore[misc]
     __tablename__ = "secrets"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -67,7 +67,7 @@ Secret = SecretModel
 # --- Workbench ---
 
 
-class DraftModel(SQLModel, table=True):
+class DraftModel(SQLModel, table=True):  # type: ignore[misc]
     __tablename__ = "drafts"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -82,7 +82,7 @@ class DraftModel(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class ArtifactModel(SQLModel, table=True):
+class ArtifactModel(SQLModel, table=True):  # type: ignore[misc]
     __tablename__ = "artifacts"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -98,7 +98,7 @@ class ArtifactModel(SQLModel, table=True):
 # --- Telemetry ---
 
 
-class TelemetryLog(SQLModel, table=True):
+class TelemetryLog(SQLModel, table=True):  # type: ignore[misc]
     __tablename__ = "telemetry_logs"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)

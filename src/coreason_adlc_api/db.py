@@ -8,8 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import os
 import contextlib
+import os
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -22,7 +22,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     f"postgresql+asyncpg://{os.getenv('POSTGRES_USER', 'postgres')}:{os.getenv('POSTGRES_PASSWORD', 'postgres')}@"
     f"{os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5432')}/"
-    f"{os.getenv('POSTGRES_DB', 'coreason_adlc')}"
+    f"{os.getenv('POSTGRES_DB', 'coreason_adlc')}",
 )
 
 # Create the engine

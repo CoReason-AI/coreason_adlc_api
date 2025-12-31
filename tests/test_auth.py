@@ -31,7 +31,6 @@ from coreason_adlc_api.auth.identity import (
     upsert_user,
 )
 from coreason_adlc_api.config import settings
-from coreason_adlc_api.db_models import UserIdentityModel as User, ProjectAccessModel
 
 # --- Helpers for RS256 ---
 

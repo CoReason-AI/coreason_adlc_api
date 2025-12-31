@@ -16,7 +16,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from coreason_adlc_api.auth.identity import (
     UserIdentity,
     parse_and_validate_token,
-)  # Assuming get_current_user wraps parse_and_validate
+)
+
+# Assuming get_current_user wraps parse_and_validate
 from coreason_adlc_api.db import get_db
 from coreason_adlc_api.vault.schemas import CreateSecretRequest, SecretResponse
 from coreason_adlc_api.vault.service import VaultService

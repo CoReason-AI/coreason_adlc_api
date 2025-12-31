@@ -44,11 +44,17 @@ async def get_lock_manager(
 
 
 @router.post("/drafts", response_model=DraftResponse, status_code=201)
-async def create_draft(draft_in: DraftCreate, service: WorkbenchService = Depends(get_service)) -> DraftResponse:
+async def create_draft(
+    draft_in: DraftCreate,
+    service: WorkbenchService = Depends(get_service),
+    user: UserIdentity = Depends(get_current_user),
+) -> DraftResponse:
     """
     Creates a new draft for a project.
     """
-    return await service.create_draft(draft_in)
+    # Pass auc_id explicitly to satisfy @governed_execution requirement for primitive asset ID
+    # Pass user.oid explicitly to satisfy @governed_execution requirement for primitive user ID
+    return await service.create_draft(draft_in, draft_in.auc_id, str(user.oid))
 
 
 @router.get("/drafts/{draft_id}", response_model=DraftResponse)
@@ -65,17 +71,13 @@ async def update_draft(
     draft_in: DraftUpdate,
     service: WorkbenchService = Depends(get_service),
     lock_manager: DraftLockManager = Depends(get_lock_manager),
+    user: UserIdentity = Depends(get_current_user),
 ) -> DraftResponse:
     """
     Updates a draft. Must have a valid lock or acquire one implicitly if allowed.
     """
-    # Ensure lock is held or acquire it
-    # For now, let's assume service handles logical checks, but locking is explicit in API usually.
-    # Actually, simplistic: Acquire lock -> Update -> Release/Keep?
-    # Better: service.update_draft handles check.
-
-    # We can rely on service to check if user has lock.
-    return await service.update_draft(draft_id, draft_in)
+    # Pass user.oid explicitly
+    return await service.update_draft(draft_id, draft_in, str(user.oid))
 
 
 @router.post("/drafts/{draft_id}/lock", response_model=bool)
@@ -98,12 +100,15 @@ async def unlock_draft(draft_id: str, lock_manager: DraftLockManager = Depends(g
 
 @router.post("/drafts/{draft_id}/publish", response_model=ArtifactResponse)
 async def publish_draft(
-    draft_id: str, publish_req: PublishRequest, service: WorkbenchService = Depends(get_service)
+    draft_id: str,
+    publish_req: PublishRequest,
+    service: WorkbenchService = Depends(get_service),
+    user: UserIdentity = Depends(get_current_user),
 ) -> ArtifactResponse:
     """
     Publishes a draft as an immutable artifact.
     """
-    return await service.publish_artifact(draft_id, publish_req)
+    return await service.publish_artifact(draft_id, publish_req, str(user.oid))
 
 
 @router.post("/drafts/{draft_id}/review", response_model=DraftResponse)

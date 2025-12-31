@@ -10,7 +10,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from coreason_veritas import governed_execution
@@ -44,26 +44,32 @@ class WorkbenchService:
         if project_id not in allowed:
             raise AccessDeniedError(f"Access denied to project {project_id}")
 
-    # Mypy correction: user.id -> user.oid
-    @governed_execution(
-        asset_id_arg="draft_in.project_id", signature_arg=None, user_id_arg="self.user.oid", allow_unsigned=True
-    )  # type: ignore
-    async def create_draft(self, draft_in: DraftCreate) -> DraftResponse:
-        await self._check_access(draft_in.project_id)
+    @governed_execution(asset_id_arg="project_id", signature_arg=None, user_id_arg="user_id", allow_unsigned=True)  # type: ignore
+    async def create_draft(self, draft_in: DraftCreate, project_id: str, user_id: str) -> DraftResponse:
+        """
+        Creates a new draft.
+        project_id and user_id are passed explicitly for governance.
+        """
+        if draft_in.auc_id != project_id:
+            raise ValueError("Project ID mismatch")
+
+        await self._check_access(project_id)
+
+        # Force recompile - Pack title and oas_content into DB content field
+        db_content = {"title": draft_in.title, "oas_content": draft_in.oas_content, "runtime_env": draft_in.runtime_env}
 
         draft = DraftModel(
-            project_id=draft_in.project_id,
-            content=draft_in.content,
-            created_by=self.user.oid,
+            project_id=project_id,
+            content=db_content,
+            created_by=uuid.UUID(user_id),
             status=ApprovalStatus.DRAFT.value,
         )
         self.session.add(draft)
         await self.session.commit()
         await self.session.refresh(draft)
-        return DraftResponse.model_validate(draft)
+        return self._map_to_response(draft)
 
     async def get_draft(self, draft_id: str) -> DraftResponse:
-        # Get draft to check project_id first? Or optimize query?
         query = select(DraftModel).where(DraftModel.id == uuid.UUID(draft_id))
         result = await self.session.exec(query)
         draft = result.one_or_none()
@@ -72,11 +78,10 @@ class WorkbenchService:
             raise ResourceNotFoundError(f"Draft {draft_id} not found")
 
         await self._check_access(draft.project_id)
-        return DraftResponse.model_validate(draft)
+        return self._map_to_response(draft)
 
-    @governed_execution(asset_id_arg="draft_id", signature_arg=None, user_id_arg="self.user.oid", allow_unsigned=True)  # type: ignore
-    async def update_draft(self, draft_id: str, draft_in: DraftUpdate) -> DraftResponse:
-        # 1. Load Draft
+    @governed_execution(asset_id_arg="draft_id", signature_arg=None, user_id_arg="user_id", allow_unsigned=True)  # type: ignore
+    async def update_draft(self, draft_id: str, draft_in: DraftUpdate, user_id: str) -> DraftResponse:
         query = select(DraftModel).where(DraftModel.id == uuid.UUID(draft_id))
         result = await self.session.exec(query)
         draft = result.one_or_none()
@@ -84,33 +89,36 @@ class WorkbenchService:
         if not draft:
             raise ResourceNotFoundError(f"Draft {draft_id} not found")
 
-        # 2. Check Project Access
         await self._check_access(draft.project_id)
-
-        # 3. Check Lock (Must be locked by user)
-        # We call check_lock from manager
         await self.lock_manager.check_lock(draft_id)
 
-        # 4. Check Status (Only DRAFT or REJECTED)
         if draft.status not in [ApprovalStatus.DRAFT.value, ApprovalStatus.REJECTED.value]:
             raise ComplianceViolationError("Cannot edit draft in current state")
 
-        # 5. Update
-        if draft_in.content:
-            draft.content = draft_in.content
+        # Update content
+        current_content = draft.content.copy() if draft.content else {}
+        if draft_in.title:
+            current_content["title"] = draft_in.title
+        if draft_in.oas_content:
+            current_content["oas_content"] = draft_in.oas_content
+        if draft_in.runtime_env:
+            current_content["runtime_env"] = draft_in.runtime_env
 
+        draft.content = current_content
         draft.updated_at = datetime.utcnow()
-        # Increment version? Usually on publish, but maybe minor version here.
 
         self.session.add(draft)
         await self.session.commit()
         await self.session.refresh(draft)
-        return DraftResponse.model_validate(draft)
+        return self._map_to_response(draft)
 
     @governed_execution(
-        asset_id_arg="draft_id", signature_arg="publish_req.signature", user_id_arg="self.user.oid", allow_unsigned=False
+        asset_id_arg="draft_id",
+        signature_arg="publish_req.signature",
+        user_id_arg="user_id",
+        allow_unsigned=False,
     )  # type: ignore
-    async def publish_artifact(self, draft_id: str, publish_req: PublishRequest) -> ArtifactResponse:
+    async def publish_artifact(self, draft_id: str, publish_req: PublishRequest, user_id: str) -> ArtifactResponse:
         query = select(DraftModel).where(DraftModel.id == uuid.UUID(draft_id))
         result = await self.session.exec(query)
         draft = result.one_or_none()
@@ -127,10 +135,10 @@ class WorkbenchService:
         artifact = ArtifactModel(
             project_id=draft.project_id,
             draft_id=draft.id,
-            version=str(draft.version),  # Or generate new
-            content_hash=publish_req.content_hash,  # Verify?
+            version=str(draft.version),
+            content_hash=publish_req.content_hash,
             signature=publish_req.signature,
-            published_by=self.user.oid,
+            published_by=uuid.UUID(user_id),
         )
 
         self.session.add(artifact)
@@ -148,7 +156,6 @@ class WorkbenchService:
         )
 
     async def approve_draft(self, draft_id: str) -> DraftResponse:
-        # TODO: Check if user is manager
         query = select(DraftModel).where(DraftModel.id == uuid.UUID(draft_id))
         result = await self.session.exec(query)
         draft = result.one_or_none()
@@ -162,7 +169,7 @@ class WorkbenchService:
         self.session.add(draft)
         await self.session.commit()
         await self.session.refresh(draft)
-        return DraftResponse.model_validate(draft)
+        return self._map_to_response(draft)
 
     async def reject_draft(self, draft_id: str, comment: Optional[str]) -> DraftResponse:
         query = select(DraftModel).where(DraftModel.id == uuid.UUID(draft_id))
@@ -175,8 +182,31 @@ class WorkbenchService:
         await self._check_access(draft.project_id)
 
         draft.status = ApprovalStatus.REJECTED.value
-        # Save comment?
         self.session.add(draft)
         await self.session.commit()
         await self.session.refresh(draft)
-        return DraftResponse.model_validate(draft)
+        return self._map_to_response(draft)
+
+    def _map_to_response(self, draft: DraftModel) -> DraftResponse:
+        """Helper to map internal DB model to API Schema."""
+        content = draft.content or {}
+
+        # Calculate lock expiry if locked
+        lock_expiry = None
+        if draft.locked_at:
+            lock_expiry = draft.locked_at + timedelta(minutes=30)  # Hardcoded timeout from locking.py
+
+        return DraftResponse(
+            draft_id=draft.id,
+            user_uuid=draft.created_by,
+            auc_id=draft.project_id,
+            title=content.get("title", "Untitled"),
+            oas_content=content.get("oas_content", {}),
+            runtime_env=content.get("runtime_env"),
+            status=ApprovalStatus(draft.status),
+            locked_by_user=draft.locked_by,
+            lock_expiry=lock_expiry,
+            created_at=draft.created_at,
+            updated_at=draft.updated_at,
+            version=draft.version,
+        )

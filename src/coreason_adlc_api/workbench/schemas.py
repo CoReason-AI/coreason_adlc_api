@@ -29,27 +29,34 @@ class ApprovalStatus(str, Enum):
 
 
 class DraftCreate(BaseModel):
-    project_id: str  # Renamed from auc_id to match service usage
-    content: Dict[str, Any]  # Renamed from oas_content/title split for simplicity in new service
+    auc_id: str
+    title: str
+    oas_content: Dict[str, Any]
+    runtime_env: Optional[str] = None
 
 
 class DraftUpdate(BaseModel):
-    content: Optional[Dict[str, Any]] = None
+    title: Optional[str] = None
+    oas_content: Optional[Dict[str, Any]] = None
+    runtime_env: Optional[str] = None
 
 
 class DraftResponse(BaseModel):
-    id: UUID = Field(alias="draft_id")  # Map id -> draft_id if needed, or stick to id
-    project_id: str
-    content: Dict[str, Any]
+    draft_id: UUID
+    user_uuid: Optional[UUID]
+    auc_id: str
+    title: str
+    oas_content: Dict[str, Any]
+    runtime_env: Optional[str] = None
     status: ApprovalStatus
-    created_by: UUID
-    locked_by: Optional[UUID] = None
-    locked_at: Optional[datetime] = None
+    locked_by_user: Optional[UUID] = Field(default=None)
+    lock_expiry: Optional[datetime] = None  # Not directly in DB, calculated
+    mode: AccessMode = AccessMode.EDIT  # Calculated
     created_at: datetime
     updated_at: datetime
     version: int
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class ValidationResponse(BaseModel):
@@ -59,12 +66,14 @@ class ValidationResponse(BaseModel):
 
 class AgentArtifact(BaseModel):
     id: UUID
-    project_id: str
+    auc_id: str
     version: str
     content: dict[str, Any]
-    content_hash: str  # Renamed from compliance_hash?
+    compliance_hash: str
     author_signature: str | None = None
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class PublishRequest(BaseModel):

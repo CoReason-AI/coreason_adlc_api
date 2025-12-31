@@ -24,7 +24,7 @@ def start(
     port: int = typer.Option(8000, help="Port to bind to"),
     reload: bool = typer.Option(False, help="Enable auto-reload"),
     workers: int = typer.Option(1, help="Number of worker processes"),
-):
+) -> None:
     """
     Start the Coreason ADLC API server.
     """
@@ -39,7 +39,7 @@ def start(
 
 
 @app_typer.command()
-def worker():
+def worker() -> None:
     """
     Start the ARQ telemetry worker.
     """
@@ -48,7 +48,7 @@ def worker():
     asyncio.run(run_worker(WorkerSettings))  # type: ignore
 
 
-def main():
+def main() -> None:
     app_typer()
 
 

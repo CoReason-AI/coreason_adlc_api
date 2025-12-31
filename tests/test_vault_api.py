@@ -40,17 +40,28 @@ def mock_vault_service():
     return service
 
 
-def test_store_secret_endpoint(client, mock_user_identity, mock_vault_service):
+def test_store_secret_endpoint(client, mock_user_identity, mock_vault_service, mock_oidc_factory):
     # Override dependencies
-    app.dependency_overrides["coreason_adlc_api.routers.vault.get_vault_service"] = lambda: mock_vault_service
-    app.dependency_overrides["coreason_adlc_api.auth.identity.parse_and_validate_token"] = lambda: mock_user_identity
+    # Use function objects as keys
+    # Note: We don't override parse_and_validate_token because we generate a valid token
+    # that passes middleware.
+    # However, get_vault_service extracts user from token.
+    # We must mock get_vault_service to inject the service.
+    # AND we must assume get_vault_service is called.
+
+    from coreason_adlc_api.routers.vault import get_vault_service
+
+    app.dependency_overrides[get_vault_service] = lambda: mock_vault_service
 
     mock_vault_service.store_secret.return_value = uuid4()
+
+    # Generate a valid token
+    token = mock_oidc_factory()
 
     response = client.post(
         "/api/v1/vault/secrets",
         json={"auc_id": "test-project", "service_name": "openai_api_key", "raw_api_key": "sk-1234567890"},
-        headers={"Authorization": "Bearer mock_token"},
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 201

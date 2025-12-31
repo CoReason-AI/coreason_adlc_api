@@ -46,6 +46,7 @@ class VaultService:
         encrypted = VaultCrypto.encrypt(secret_value)
 
         # Atomic upsert using PostgreSQL ON CONFLICT
+        # mypy complains about returning() overload with SQLModel fields, suppressing
         stmt = (
             insert(SecretModel)
             .values(project_id=project_id, key_name=key_name, encrypted_value=encrypted)
@@ -53,7 +54,7 @@ class VaultService:
                 index_elements=["project_id", "key_name"],
                 set_={"encrypted_value": encrypted, "updated_at": insert(SecretModel).excluded.updated_at},
             )
-            .returning(SecretModel.id)
+            .returning(SecretModel.id)  # type: ignore[call-overload]
         )
 
         result = await self.session.exec(stmt)  # type: ignore

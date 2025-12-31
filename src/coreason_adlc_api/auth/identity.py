@@ -170,7 +170,7 @@ async def map_groups_to_projects(identity: UserIdentity, session: Optional[Any] 
     Accepts an optional session for testing or dependency injection.
     """
     # For now, if no groups/roles logic is complex, just return projects where user is assigned.
-    # The original implementation queried 'GroupMapping', but we switched to ProjectAccessModel for simplicity/standard RBAC.
+    # The original implementation queried 'GroupMapping', but we switched to ProjectAccessModel for RBAC.
 
     # If session is None, use a fresh one (e.g. called from utility)
     # But usually called with session.

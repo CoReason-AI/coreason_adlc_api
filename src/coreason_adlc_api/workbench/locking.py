@@ -57,7 +57,6 @@ class DraftLockManager:
         now = datetime.utcnow()
 
         # Check existing lock
-        # Mypy: user.id -> user.oid
         if draft.locked_by and draft.locked_by != self.user.oid:
             # Check timeout
             if draft.locked_at and (now - draft.locked_at) < timedelta(minutes=LOCK_TIMEOUT_MINUTES):
@@ -90,7 +89,6 @@ class DraftLockManager:
         if not draft:
             return False
 
-        # Mypy: user.id -> user.oid
         if draft.locked_by == self.user.oid:
             draft.locked_by = None
             draft.locked_at = None
@@ -112,7 +110,6 @@ class DraftLockManager:
             # Should be 404, but strict lock check might just fail
             raise DraftLockedError("Draft not found")
 
-        # Mypy: user.id -> user.oid
         if draft.locked_by != self.user.oid:
             # Check if expired?
             # For strict checking during save, we assume we must actively hold it.

@@ -19,7 +19,7 @@ from loguru import logger
 from sqlmodel import select
 
 from coreason_adlc_api.db import async_session_factory
-from coreason_adlc_api.db_models import Secret
+from coreason_adlc_api.db_models import SecretModel
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
 # Circuit Breaker Registry
@@ -49,7 +49,10 @@ class InferenceProxyService:
         provider = self.get_provider_for_model(model)
 
         async with async_session_factory() as session:
-            statement = select(Secret).where(Secret.auc_id == auc_id, Secret.service_name == provider)
+            # Fix fields: project_id (not auc_id), key_name (not service_name)
+            statement = select(SecretModel).where(
+                SecretModel.project_id == auc_id, SecretModel.key_name == provider
+            )
             result = await session.exec(statement)
             secret = result.first()
 
@@ -60,8 +63,8 @@ class InferenceProxyService:
             )
 
         try:
-            crypto = VaultCrypto()
-            return crypto.decrypt_secret(secret.encrypted_value)
+            # Use static decrypt helper which handles bytes
+            return VaultCrypto.decrypt(secret.encrypted_value)
         except Exception as e:
             logger.error(f"Decryption failed for {auc_id}/{provider}: {e}")
             raise HTTPException(
