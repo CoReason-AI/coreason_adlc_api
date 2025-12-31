@@ -87,7 +87,7 @@ class InferenceProxyService:
 
             # Using standard aiobreaker call() pattern
             # We create a closure or partial for the async call
-            async def _inference_call():
+            async def _inference_call() -> Any:
                 return await litellm.acompletion(**kwargs)
 
             return await breaker.call(_inference_call)

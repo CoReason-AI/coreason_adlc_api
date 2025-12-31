@@ -11,9 +11,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlmodel import select, col
 
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
-from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.db import async_session_factory
+from coreason_adlc_api.db_models import GroupMapping
 from coreason_adlc_api.middleware.budget import check_budget_status
 from coreason_adlc_api.middleware.pii import scrub_pii_recursive
 from coreason_adlc_api.workbench.locking import refresh_lock
@@ -75,10 +77,10 @@ async def create_new_draft(
 
 async def _get_user_roles(group_oids: list[UUID]) -> list[str]:
     # TODO: Refactor into identity module
-    pool = get_pool()
-    query = "SELECT role_name FROM identity.group_mappings WHERE sso_group_oid = ANY($1::uuid[])"
-    rows = await pool.fetch(query, group_oids)
-    return [r["role_name"] for r in rows]
+    async with async_session_factory() as session:
+        statement = select(GroupMapping.role_name).where(col(GroupMapping.sso_group_oid).in_(group_oids))
+        results = await session.exec(statement)
+        return list(results.all())
 
 
 @router.get("/drafts/{draft_id}", response_model=DraftResponse)

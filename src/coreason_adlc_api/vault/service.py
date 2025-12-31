@@ -40,7 +40,7 @@ async def store_secret(auc_id: str, service_name: str, raw_api_key: str, user_uu
                 created_by=user_uuid,
                 created_at=datetime.utcnow()
             ).on_conflict_do_update(
-                index_elements=['auc_id', 'service_name'], # Requires unique constraint on these columns
+                index_elements=['auc_id', 'service_name'],
                 set_=dict(
                     encrypted_value=encrypted_value,
                     created_by=user_uuid,
@@ -49,15 +49,12 @@ async def store_secret(auc_id: str, service_name: str, raw_api_key: str, user_uu
             ).returning(Secret.secret_id)
 
             result = await session.exec(stmt) # type: ignore[call-overload]
-            # result is a Result object wrapping Rows (tuples)
-            # We want the scalar value. .first() returns a Row (uuid,) or None.
             row = result.first()
 
             if not row:
-                 # Should not happen with upsert returning
                  raise RuntimeError("Upsert failed to return ID")
 
-            # Extract UUID from tuple
+            # Extract UUID from tuple (row is (uuid,))
             secret_id = row[0]
             await session.commit()
             return secret_id

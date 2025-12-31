@@ -50,7 +50,7 @@ async def init_db() -> None:
     """
     Initializes the database.
     """
-    # Verify connection or initialize models if needed
+    # Verify connection
     async with engine.begin() as conn:
         await conn.run_sync(lambda _: None)
 

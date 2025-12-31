@@ -9,16 +9,29 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import time
-from typing import Callable
+from typing import Callable, Any
 
 import httpx
 import jwt
 import keyring
+from tenacity import retry, stop_after_delay, wait_fixed, retry_if_exception, RetryError
 
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
 
 SERVICE_NAME = "coreason-adlc-api-key"
 USERNAME = "default_user"
+
+
+class AuthorizationPendingError(Exception):
+    pass
+
+class SlowDownError(Exception):
+    pass
+
+
+def is_polling_error(exception: Exception) -> bool:
+    """Retry if AuthorizationPending or SlowDown."""
+    return isinstance(exception, (AuthorizationPendingError, SlowDownError))
 
 
 class ClientAuthManager:
@@ -56,44 +69,63 @@ class ClientAuthManager:
         token_url = f"{base_url.rstrip('/')}/auth/token"
         interval = dc_data.interval
         expires_in = dc_data.expires_in
-        start_time = time.time()
 
-        while (time.time() - start_time) < expires_in:
+        # Using Tenacity for polling loop
+
+        poll_state = {"interval": interval}
+
+        def wait_dynamic(retry_state: Any) -> float:
+            return poll_state["interval"]
+
+        @retry(
+            stop=stop_after_delay(expires_in),
+            wait=wait_dynamic,
+            retry=retry_if_exception(is_polling_error),
+            reraise=True
+        )
+        def _poll() -> str:
             try:
-                # We send device_code as a JSON body, matching the router expectations
-                # The router expects `device_code` string in body.
-                # Router signature: async def poll_for_token(device_code: str = Body(..., embed=True))
-                # This means JSON body: {"device_code": "..."}
                 poll_resp = httpx.post(token_url, json={"device_code": dc_data.device_code})
 
                 if poll_resp.status_code == 200:
-                    token_data = TokenResponse(**poll_resp.json())
-                    # Save to keyring
-                    keyring.set_password(SERVICE_NAME, USERNAME, token_data.access_token)
-                    print("Successfully authenticated!")
-                    return token_data.access_token
+                    return poll_resp.json() # Return dict
 
                 if poll_resp.status_code == 400:
                     error_detail = poll_resp.json().get("detail")
                     if error_detail == "authorization_pending":
-                        pass  # Just wait
+                        raise AuthorizationPendingError()
                     elif error_detail == "slow_down":
-                        interval += 5
+                        poll_state["interval"] += 5
+                        raise SlowDownError()
                     elif error_detail == "expired_token":
+                        # Don't retry, let it bubble as failure
                         raise RuntimeError("Token expired during polling.")
                     else:
-                        # Unknown 400 error
                         raise RuntimeError(f"Authentication failed: {error_detail}")
-                else:
-                    poll_resp.raise_for_status()
+
+                poll_resp.raise_for_status()
+                # Should not reach here if raise_for_status raises
+                raise RuntimeError("Unexpected state")
 
             except httpx.RequestError as e:
-                # Network error, maybe transient?
-                print(f"Network error polling token: {e}")
+                # Retry on network error?
+                # For now treating as pending (retry) or maybe separate logic?
+                # Let's treat it as AuthorizationPending (keep trying)
+                raise AuthorizationPendingError() from e
 
-            time.sleep(interval)
+        try:
+            token_data_dict = _poll()
+            token_data = TokenResponse(**token_data_dict)
 
-        raise RuntimeError("Authentication timed out.")
+            # Save to keyring
+            keyring.set_password(SERVICE_NAME, USERNAME, token_data.access_token)
+            print("Successfully authenticated!")
+            return token_data.access_token
+
+        except RetryError:
+            raise RuntimeError("Authentication timed out.")
+        except Exception as e:
+            raise RuntimeError(f"Authentication failed: {e}")
 
     def get_token(self) -> str | None:
         """
@@ -109,14 +141,6 @@ class ClientAuthManager:
             # We don't verify signature here because we don't have the public key easily accessible
             # and the server will reject it anyway if invalid.
             jwt.decode(token, options={"verify_signature": False, "verify_exp": True})
-            # verify_exp=True by default in pyjwt, but requires 'exp' claim.
-            # If 'verify_signature' is False, pyjwt still checks 'exp' if verify_exp is not disabled.
-            # Wait, pyjwt won't check exp if verify_signature is False unless we explicitly tell it to?
-            # Actually, `jwt.decode` with `verify_signature=False` DOES NOT check expiry by default in recent versions?
-            # Let's check pyjwt docs or assume standard behavior.
-            # Safe bet: decode it, check 'exp' manually or let jwt do it.
-            # Actually, if I pass verify_exp=True it might complain if signature is not verified?
-            # Let's just decode and check manual timestamp to be robust.
         except jwt.ExpiredSignatureError:
             return None
         except jwt.PyJWTError:
@@ -124,8 +148,6 @@ class ClientAuthManager:
             return None
 
         # Double check expiration manually just in case
-        # (Though ExpiredSignatureError handles it mostly)
-        # Re-decoding to get payload to be safe on manual check
         decoded = jwt.decode(token, options={"verify_signature": False})
         exp = decoded.get("exp")
         if exp and time.time() > exp:

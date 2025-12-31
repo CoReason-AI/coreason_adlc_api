@@ -9,11 +9,14 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import sys
+import asyncio
 
 import uvicorn
 from loguru import logger
+from arq import run_worker
 
 from coreason_adlc_api.config import settings
+from coreason_adlc_api.telemetry.arq_worker import WorkerSettings
 
 
 def start() -> None:
@@ -31,15 +34,30 @@ def start() -> None:
     )
 
 
+def worker() -> None:
+    """
+    Entry point for the CLI command `coreason-api worker`.
+    Runs the ARQ worker.
+    """
+    logger.info("Initializing ARQ Worker...")
+    asyncio.run(run_worker(WorkerSettings))
+
+
 def main() -> None:
     """
     Main entry point for console scripts.
-    Parses arguments (simple implementation for now).
+    Parses arguments.
     """
-    if len(sys.argv) > 1 and sys.argv[1] == "start":
-        start()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "start":
+            start()
+        elif sys.argv[1] == "worker":
+            worker()
+        else:
+            print("Usage: coreason-api [start|worker]")
+            sys.exit(1)
     else:
-        print("Usage: coreason-api start")
+        print("Usage: coreason-api [start|worker]")
         sys.exit(1)
 
 

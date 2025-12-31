@@ -8,19 +8,37 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import json
 from datetime import datetime, timezone
 from typing import Any, Dict
 from uuid import UUID
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from loguru import logger
 
-from coreason_adlc_api.utils import get_redis_client
+from coreason_adlc_api.config import settings
+
+# Global ARQ Pool
+_arq_pool = None
+
+
+async def get_arq_pool():
+    global _arq_pool
+    if _arq_pool is None:
+        _arq_pool = await create_pool(
+            RedisSettings(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                password=settings.REDIS_PASSWORD,
+                database=settings.REDIS_DB,
+            )
+        )
+    return _arq_pool
 
 
 class TelemetryService:
     """
-    Service for logging telemetry data asynchronously.
+    Service for logging telemetry data asynchronously using ARQ.
     """
 
     async def async_log_telemetry(
@@ -33,7 +51,7 @@ class TelemetryService:
         metadata: Dict[str, Any],
     ) -> None:
         """
-        Push telemetry data to a Redis Queue for asynchronous processing.
+        Push telemetry data to ARQ for asynchronous processing.
         """
         try:
             payload = {
@@ -47,8 +65,8 @@ class TelemetryService:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
-            client = get_redis_client()
-            await client.rpush("telemetry_queue", json.dumps(payload))
+            arq = await get_arq_pool()
+            await arq.enqueue_job("store_telemetry", data=payload)
 
         except Exception as e:
             logger.error(f"Failed to log telemetry: {e}")

@@ -13,8 +13,10 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
+from sqlmodel import select, col
 
-from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.db import async_session_factory
+from coreason_adlc_api.db_models import AgentDraft
 from coreason_adlc_api.workbench.schemas import AccessMode
 
 __all__ = ["AccessMode", "acquire_draft_lock", "refresh_lock", "verify_lock_for_update"]
@@ -30,22 +32,18 @@ async def acquire_draft_lock(draft_id: UUID, user_uuid: UUID, roles: list[str]) 
     Returns AccessMode.SAFE_VIEW if locked by another user but user is MANAGER.
     Raises 423 Locked otherwise.
     """
-    pool = get_pool()
+    try:
+        async with async_session_factory() as session:
+            # We use with_for_update() to lock the row
+            statement = select(AgentDraft).where(AgentDraft.draft_id == draft_id).with_for_update()
+            result = await session.exec(statement)
+            draft = result.first()
 
-    # We use a transaction to ensure atomicity
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            # Select current lock status FOR UPDATE to block other concurrent lock attempts
-            row = await conn.fetchrow(
-                "SELECT locked_by_user, lock_expiry FROM workbench.agent_drafts WHERE draft_id = $1 FOR UPDATE",
-                draft_id,
-            )
-
-            if not row:
+            if not draft:
                 raise HTTPException(status_code=404, detail="Draft not found")
 
-            locked_by = row["locked_by_user"]
-            expiry = row["lock_expiry"]
+            locked_by = draft.locked_by_user
+            expiry = draft.lock_expiry
             now = datetime.now(timezone.utc)
 
             # Check if locked
@@ -67,62 +65,66 @@ async def acquire_draft_lock(draft_id: UUID, user_uuid: UUID, roles: list[str]) 
 
             # Not locked, or locked by self, or lock expired -> Acquire Lock
             new_expiry = now + timedelta(seconds=LOCK_DURATION_SECONDS)
-            await conn.execute(
-                "UPDATE workbench.agent_drafts SET locked_by_user = $1, lock_expiry = $2 WHERE draft_id = $3",
-                user_uuid,
-                new_expiry,
-                draft_id,
-            )
+            draft.locked_by_user = user_uuid
+            draft.lock_expiry = new_expiry
+            session.add(draft)
+            await session.commit()
 
             return AccessMode.EDIT
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error acquiring lock: {e}")
+        raise HTTPException(status_code=500, detail="Failed to acquire lock") from e
 
 
 async def refresh_lock(draft_id: UUID, user_uuid: UUID) -> None:
     """
     Extends the lock expiry if held by the user.
     """
-    pool = get_pool()
-    now = datetime.now(timezone.utc)
-    new_expiry = now + timedelta(seconds=LOCK_DURATION_SECONDS)
+    async with async_session_factory() as session:
+        statement = select(AgentDraft).where(
+            AgentDraft.draft_id == draft_id,
+            AgentDraft.locked_by_user == user_uuid
+        )
+        result = await session.exec(statement)
+        draft = result.first()
 
-    result = await pool.execute(
-        """
-        UPDATE workbench.agent_drafts
-        SET lock_expiry = $1
-        WHERE draft_id = $2 AND locked_by_user = $3
-        """,
-        new_expiry,
-        draft_id,
-        user_uuid,
-    )
+        if draft:
+            now = datetime.now(timezone.utc)
+            new_expiry = now + timedelta(seconds=LOCK_DURATION_SECONDS)
+            draft.lock_expiry = new_expiry
+            session.add(draft)
+            await session.commit()
+            return
 
-    # Check if any row was updated
-    if result == "UPDATE 0":
-        # Either draft doesn't exist, or user doesn't hold the lock
-        # Check existence
-        row = await pool.fetchrow("SELECT locked_by_user FROM workbench.agent_drafts WHERE draft_id = $1", draft_id)
-        if not row:
+        # If not found via the above query, check if draft exists at all
+        exists_stmt = select(AgentDraft).where(AgentDraft.draft_id == draft_id)
+        exists_res = await session.exec(exists_stmt)
+        existing = exists_res.first()
+
+        if not existing:
             raise HTTPException(status_code=404, detail="Draft not found")
 
-        locked_by = row["locked_by_user"]
-        if locked_by != user_uuid:
-            raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="You do not hold the lock for this draft")
+        if existing.locked_by_user != user_uuid:
+             raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="You do not hold the lock for this draft")
 
 
 async def verify_lock_for_update(draft_id: UUID, user_uuid: UUID) -> None:
     """
     Ensures the user holds a valid lock before performing an update.
     """
-    pool = get_pool()
-    row = await pool.fetchrow(
-        "SELECT locked_by_user, lock_expiry FROM workbench.agent_drafts WHERE draft_id = $1", draft_id
-    )
+    async with async_session_factory() as session:
+        statement = select(AgentDraft).where(AgentDraft.draft_id == draft_id)
+        result = await session.exec(statement)
+        draft = result.first()
 
-    if not row:
+    if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
-    locked_by = row["locked_by_user"]
-    expiry = row["lock_expiry"]
+    locked_by = draft.locked_by_user
+    expiry = draft.lock_expiry
     now = datetime.now(timezone.utc)
 
     if not locked_by or locked_by != user_uuid:

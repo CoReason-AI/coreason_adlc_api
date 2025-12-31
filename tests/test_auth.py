@@ -273,66 +273,73 @@ async def test_parse_token_invalid_signature_error(mock_oidc_setup: RSAPrivateKe
         assert exc.value.status_code == 401
 
 
-# Logic Tests with Mocked DB
+# Logic Tests with Mocked DB (Updated for SQLModel)
 
 
 @pytest.mark.asyncio
-async def test_upsert_user() -> None:
+async def test_upsert_user(mock_db_session) -> None:
     user_uuid = uuid.uuid4()
     identity = UserIdentity(oid=user_uuid, email="upsert@coreason.ai", groups=[], full_name="Upsert Test")
 
-    mock_pool = AsyncMock()
-    with patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool):
+    # Patch session factory
+    with patch("coreason_adlc_api.auth.identity.async_session_factory") as mock_factory:
+        mock_factory.return_value.__aenter__.return_value = mock_db_session
+
+        # Configure mock to return None (new user) or existing
+        # By default mock_db_session.exec.return_value.first.return_value is None
+
         await upsert_user(identity)
-        mock_pool.execute.assert_called_once()
-        args = mock_pool.execute.call_args[0]
-        assert "INSERT INTO identity.users" in args[0]
-        assert args[1] == user_uuid
+
+        # Atomic upsert uses exec with insert statement
+        assert mock_db_session.exec.called
+        assert mock_db_session.commit.called
 
 
 @pytest.mark.asyncio
-async def test_upsert_user_failure() -> None:
+async def test_upsert_user_failure(mock_db_session) -> None:
     user_uuid = uuid.uuid4()
     identity = UserIdentity(oid=user_uuid, email="upsert@coreason.ai", groups=[], full_name="Upsert Test")
 
-    mock_pool = AsyncMock()
-    mock_pool.execute.side_effect = Exception("DB Error")
+    mock_db_session.commit.side_effect = Exception("DB Error")
 
-    with patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool):
+    with patch("coreason_adlc_api.auth.identity.async_session_factory") as mock_factory:
+        mock_factory.return_value.__aenter__.return_value = mock_db_session
         with patch("coreason_adlc_api.auth.identity.logger") as mock_logger:
             await upsert_user(identity)
             mock_logger.error.assert_called()
 
 
 @pytest.mark.asyncio
-async def test_map_groups_to_projects() -> None:
+async def test_map_groups_to_projects(mock_db_session) -> None:
     group_oid = uuid.uuid4()
 
-    mock_pool = AsyncMock()
-    # Mock return value for fetch
-    mock_pool.fetch.return_value = [
-        {"auc_id": "project-alpha"},
-        {"auc_id": "project-beta"},
-        {"auc_id": "project-alpha"},  # Duplicate to test dedupe
+    # Mock SQLModel select results
+    # Query returns allowed_auc_ids list (as Rows of tuples)
+    mock_db_session.exec.return_value.all.return_value = [
+        (["project-alpha"],),
+        (["project-beta"],),
+        (["project-alpha"],)
     ]
 
-    with patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool):
+    with patch("coreason_adlc_api.auth.identity.async_session_factory") as mock_factory:
+        mock_factory.return_value.__aenter__.return_value = mock_db_session
+
         projects = await map_groups_to_projects([group_oid])
 
-        mock_pool.fetch.assert_called_once()
         assert len(projects) == 2
         assert "project-alpha" in projects
         assert "project-beta" in projects
 
 
 @pytest.mark.asyncio
-async def test_map_groups_failure() -> None:
+async def test_map_groups_failure(mock_db_session) -> None:
     group_oid = uuid.uuid4()
 
-    mock_pool = AsyncMock()
-    mock_pool.fetch.side_effect = Exception("DB Error")
+    mock_db_session.exec.side_effect = Exception("DB Error")
 
-    with patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool):
+    with patch("coreason_adlc_api.auth.identity.async_session_factory") as mock_factory:
+        mock_factory.return_value.__aenter__.return_value = mock_db_session
+
         with patch("coreason_adlc_api.auth.identity.logger") as mock_logger:
             projects = await map_groups_to_projects([group_oid])
             assert projects == []

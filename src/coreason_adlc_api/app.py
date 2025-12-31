@@ -18,8 +18,8 @@ from loguru import logger
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.middleware.pii import PIIAnalyzer
+from coreason_adlc_api.middleware.telemetry import get_arq_pool
 from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
-from coreason_adlc_api.telemetry.worker import telemetry_worker
 
 
 @asynccontextmanager
@@ -33,12 +33,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize Database
     await init_db()
 
+    # Initialize ARQ Pool
+    try:
+        await get_arq_pool()
+        logger.info("Connected to ARQ Redis Pool.")
+    except Exception as e:
+        logger.warning(f"Failed to connect to Redis for ARQ: {e}")
+
     # Initialize PII Analyzer (Warm-up models)
     # Offload to thread to avoid blocking startup if it takes time
     await asyncio.to_thread(PIIAnalyzer().init_analyzer)
-
-    # Start Telemetry Worker
-    telemetry_task = asyncio.create_task(telemetry_worker())
 
     # Enterprise License Check (BC-03)
     if settings.ENTERPRISE_LICENSE_KEY:
@@ -49,13 +53,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     logger.info("Shutting down Coreason ADLC API...")
-
-    # Stop Telemetry Worker
-    telemetry_task.cancel()
-    try:
-        await telemetry_task
-    except asyncio.CancelledError:
-        logger.info("Telemetry Worker stopped.")
 
     await close_db()
 

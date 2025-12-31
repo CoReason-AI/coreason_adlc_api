@@ -1,5 +1,5 @@
 from typing import Any, Callable, Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 import jwt
 import pytest
@@ -72,3 +72,30 @@ def mock_oidc_factory(
             return str(jwt.encode(payload, private_key, algorithm="RS256"))
 
         yield _create_token
+
+@pytest.fixture
+def mock_db_session() -> Generator[AsyncMock, None, None]:
+    """
+    Mocks the async_session_factory context manager.
+    Usage:
+        def test_something(mock_db_session):
+            mock_db_session.exec.return_value.first.return_value = SomeModel(...)
+    """
+    mock_session = AsyncMock()
+    # SQLModel Session.add is synchronous. We mock it as a MagicMock (sync).
+    mock_session.add = MagicMock()
+
+    # Mock exec returning a result object that has .all() and .first()
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+    mock_result.first.return_value = None
+    mock_session.exec.return_value = mock_result
+
+    # Mock context manager for session factory
+    mock_factory = MagicMock()
+    mock_factory.__aenter__.return_value = mock_session
+    mock_factory.__aexit__.return_value = None
+
+    # Patch the factory where it is defined in db.py
+    with patch("coreason_adlc_api.db.async_session_factory", return_value=mock_factory):
+         yield mock_session
