@@ -307,7 +307,7 @@ async def test_map_groups_to_projects(mock_db_session: AsyncMock) -> None:
 
     # Mock return value for execute
     mock_res = MagicMock()
-    mock_res.fetchall.return_value = [] # Not used by current implementation which iterates
+    mock_res.fetchall.return_value = []  # Not used by current implementation which iterates
     # iteration over result yields rows
     mock_res.__iter__.return_value = [
         ("project-alpha",),

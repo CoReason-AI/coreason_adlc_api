@@ -15,7 +15,6 @@ import litellm
 from fastapi import HTTPException, status
 from loguru import logger
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from coreason_adlc_api.database import async_session_factory
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError

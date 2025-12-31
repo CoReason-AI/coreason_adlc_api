@@ -53,8 +53,6 @@ async def create_draft(session: AsyncSession, draft: DraftCreate, user_uuid: UUI
     return DraftResponse.model_validate(dict(row))
 
 
-
-
 async def get_drafts(session: AsyncSession, auc_id: str, include_deleted: bool = False) -> List[DraftResponse]:
     stmt = text("""
         SELECT * FROM workbench.agent_drafts

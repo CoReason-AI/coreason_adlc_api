@@ -10,7 +10,7 @@
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any, Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -20,7 +20,6 @@ from sqlalchemy.engine import Result
 
 from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock, verify_lock_for_update
 from coreason_adlc_api.workbench.schemas import DraftCreate, DraftResponse
-
 
 # --- Complex Scenarios ---
 

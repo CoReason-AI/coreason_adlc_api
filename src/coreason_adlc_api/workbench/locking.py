@@ -46,8 +46,8 @@ async def acquire_draft_lock(session: AsyncSession, draft_id: UUID, user_uuid: U
     if not row:
         raise HTTPException(status_code=404, detail="Draft not found")
 
-    locked_by = row[0] # locked_by_user
-    expiry = row[1] # lock_expiry
+    locked_by = row[0]  # locked_by_user
+    expiry = row[1]  # lock_expiry
     now = datetime.now(timezone.utc)
 
     # Check if locked
@@ -57,16 +57,14 @@ async def acquire_draft_lock(session: AsyncSession, draft_id: UUID, user_uuid: U
         # Check for Manager Override
         if "MANAGER" in roles:
             logger.info(f"Manager {user_uuid} accessing locked draft {draft_id} in SAFE_VIEW")
-            await session.commit() # Release lock on row
+            await session.commit()  # Release lock on row
             return AccessMode.SAFE_VIEW
 
         logger.warning(f"User {user_uuid} denied edit access to draft {draft_id} locked by {locked_by}")
-        await session.rollback() # Release lock on row
+        await session.rollback()  # Release lock on row
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
-            detail=(
-                f"Draft is currently being edited by another user (Lock expires in {(expiry - now).seconds}s)"
-            ),
+            detail=(f"Draft is currently being edited by another user (Lock expires in {(expiry - now).seconds}s)"),
         )
 
     # Not locked, or locked by self, or lock expired -> Acquire Lock
@@ -78,11 +76,7 @@ async def acquire_draft_lock(session: AsyncSession, draft_id: UUID, user_uuid: U
         WHERE draft_id = :draft_id
     """)
 
-    await session.execute(update_stmt, {
-        "user_uuid": user_uuid,
-        "new_expiry": new_expiry,
-        "draft_id": draft_id
-    })
+    await session.execute(update_stmt, {"user_uuid": user_uuid, "new_expiry": new_expiry, "draft_id": draft_id})
 
     await session.commit()
 
@@ -102,11 +96,7 @@ async def refresh_lock(session: AsyncSession, draft_id: UUID, user_uuid: UUID) -
         WHERE draft_id = :draft_id AND locked_by_user = :user_uuid
     """)
 
-    result = await session.execute(stmt, {
-        "new_expiry": new_expiry,
-        "draft_id": draft_id,
-        "user_uuid": user_uuid
-    })
+    result = await session.execute(stmt, {"new_expiry": new_expiry, "draft_id": draft_id, "user_uuid": user_uuid})
 
     await session.commit()
 

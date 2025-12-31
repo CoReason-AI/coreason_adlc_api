@@ -10,17 +10,15 @@
 
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.engine import Result
 
 from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, DraftUpdate
 from coreason_adlc_api.workbench.service import create_draft, get_draft_by_id, get_drafts, update_draft
 
-
-from unittest.mock import MagicMock
-from sqlalchemy.engine import Result
 
 @pytest.mark.asyncio
 async def test_create_draft_logic(mock_db_session: AsyncMock) -> None:
@@ -152,7 +150,7 @@ async def test_update_draft_logic(mock_db_session: AsyncMock) -> None:
                 "status": ApprovalStatus.DRAFT,
             }
         else:
-             mock_res.fetchone.return_value = None
+            mock_res.fetchone.return_value = None
 
         return mock_res
 
@@ -198,7 +196,7 @@ async def test_update_draft_no_fields(mock_db_session: AsyncMock) -> None:
                 "status": ApprovalStatus.DRAFT,
             }
         else:
-             mock_res.fetchone.return_value = None
+            mock_res.fetchone.return_value = None
 
         return mock_res
 
@@ -228,7 +226,7 @@ async def test_update_draft_not_found(mock_db_session: AsyncMock) -> None:
         elif "UPDATE workbench.agent_drafts" in query:
             mock_res.mappings.return_value.fetchone.return_value = None
         else:
-             mock_res.fetchone.return_value = None
+            mock_res.fetchone.return_value = None
 
         return mock_res
 
@@ -252,7 +250,7 @@ async def test_update_draft_no_fields_not_found(mock_db_session: AsyncMock) -> N
         elif "SELECT * FROM workbench.agent_drafts" in query:
             mock_res.mappings.return_value.fetchone.return_value = None
         else:
-             mock_res.fetchone.return_value = None
+            mock_res.fetchone.return_value = None
 
         return mock_res
 

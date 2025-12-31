@@ -17,7 +17,7 @@ import httpx
 import jwt
 from fastapi import Depends, Header, HTTPException, status
 from loguru import logger
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -170,9 +170,8 @@ async def map_groups_to_projects(session: AsyncSession, group_oids: List[UUID]) 
     try:
         # We need to unnest allowed_auc_ids.
         # SQLAlchemy Core:
-        stmt = (
-            select(func.unnest(GroupMapping.allowed_auc_ids).label("auc_id"))
-            .where(GroupMapping.sso_group_oid.in_(group_oids))
+        stmt = select(func.unnest(GroupMapping.allowed_auc_ids).label("auc_id")).where(
+            GroupMapping.sso_group_oid.in_(group_oids)
         )
         result = await session.execute(stmt)
         # Deduplicate results

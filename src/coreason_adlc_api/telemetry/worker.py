@@ -14,7 +14,6 @@ from uuid import UUID
 
 from loguru import logger
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from coreason_adlc_api.database import async_session_factory
 from coreason_adlc_api.utils import get_redis_client
@@ -59,16 +58,19 @@ async def telemetry_worker() -> None:
                         ) VALUES (:user_uuid, :auc_id, :model_name, :req_payload, :res_payload, :cost, :latency, :ts)
                     """)
 
-                    await session.execute(stmt, {
-                        "user_uuid": user_uuid,
-                        "auc_id": payload.get("auc_id"),
-                        "model_name": payload.get("model_name"),
-                        "req_payload": json.dumps(payload.get("request_payload")),
-                        "res_payload": json.dumps(payload.get("response_payload")),
-                        "cost": payload.get("cost_usd"),
-                        "latency": payload.get("latency_ms"),
-                        "ts": payload.get("timestamp")
-                    })
+                    await session.execute(
+                        stmt,
+                        {
+                            "user_uuid": user_uuid,
+                            "auc_id": payload.get("auc_id"),
+                            "model_name": payload.get("model_name"),
+                            "req_payload": json.dumps(payload.get("request_payload")),
+                            "res_payload": json.dumps(payload.get("response_payload")),
+                            "cost": payload.get("cost_usd"),
+                            "latency": payload.get("latency_ms"),
+                            "ts": payload.get("timestamp"),
+                        },
+                    )
                     await session.commit()
 
             except Exception as e:

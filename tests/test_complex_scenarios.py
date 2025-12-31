@@ -22,7 +22,6 @@ from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock
 from coreason_adlc_api.workbench.schemas import DraftCreate, DraftUpdate
 from coreason_adlc_api.workbench.service import create_draft, update_draft
 
-
 # --- Complex Tests ---
 
 
@@ -47,16 +46,16 @@ async def test_race_condition_lock_acquisition(mock_db_session: AsyncMock) -> No
     async def execute_side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
         if "SELECT locked_by_user" in query:
-             # Return current state.
-             # workbench/locking.py expects row[0], row[1]
-             return create_result((lock_state["locked_by"], lock_state["expiry"]))
+            # Return current state.
+            # workbench/locking.py expects row[0], row[1]
+            return create_result((lock_state["locked_by"], lock_state["expiry"]))
 
         if "UPDATE workbench.agent_drafts" in query:
             # params: {"user_uuid": ..., "new_expiry": ..., "draft_id": ...}
             if params and "user_uuid" in params:
                 lock_state["locked_by"] = params["user_uuid"]
                 lock_state["expiry"] = params["new_expiry"]
-            return create_result(None) # UPDATE returns nothing relevant usually unless RETURNING
+            return create_result(None)  # UPDATE returns nothing relevant usually unless RETURNING
 
         return create_result(None)
 
@@ -71,7 +70,7 @@ async def test_race_condition_lock_acquisition(mock_db_session: AsyncMock) -> No
     results = await asyncio.gather(
         acquire_draft_lock(mock_db_session, draft_id, alice_id, []),
         acquire_draft_lock(mock_db_session, draft_id, bob_id, []),
-        return_exceptions=True
+        return_exceptions=True,
     )
 
     # One should be AccessMode.EDIT, one should be HTTPException(423)
@@ -144,15 +143,15 @@ async def test_update_on_deleted_draft(mock_db_session: AsyncMock) -> None:
         query = str(stmt)
         mock_res = MagicMock(spec=Result)
 
-        if "SELECT locked_by_user" in query: # verify_lock
+        if "SELECT locked_by_user" in query:  # verify_lock
             mock_res.fetchone.return_value = (user_id, future)
-        elif "SELECT status" in query: # check_status
+        elif "SELECT status" in query:  # check_status
             mock_res.fetchone.return_value = ("DRAFT",)
         elif "UPDATE workbench.agent_drafts" in query:
-             # update returning * (not found)
-             mock_res.mappings.return_value.fetchone.return_value = None
+            # update returning * (not found)
+            mock_res.mappings.return_value.fetchone.return_value = None
         else:
-             mock_res.fetchone.return_value = None
+            mock_res.fetchone.return_value = None
 
         return mock_res
 
