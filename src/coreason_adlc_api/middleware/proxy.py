@@ -105,9 +105,7 @@ class InferenceProxyService:
             raise
         except Exception as e:
             logger.error(f"Inference Proxy Error: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-            ) from e  # pragma: no cover
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
 
     async def estimate_request_cost(self, model: str, messages: List[Dict[str, Any]]) -> float:
         """
