@@ -32,7 +32,7 @@ from coreason_adlc_api.workbench.service import _check_status_for_update, transi
 
 
 @pytest.mark.asyncio
-async def test_identity_token_missing_oid_claim(mock_db_session: AsyncMock, mock_oidc_factory: Any) -> None:
+async def test_identity_token_missing_oid_claim(mock_db_session: AsyncMock) -> None:
     """
     Test that if 'oid' and 'sub' are missing, ValueError -> HTTPException is raised.
     """
@@ -59,6 +59,7 @@ async def test_identity_expired_token(mock_db_session: AsyncMock) -> None:
     with patch("coreason_adlc_api.auth.identity._JWKS_CLIENT") as mock_jwks:
         mock_jwks.get_signing_key_from_jwt.return_value.key = "fake_key"
 
+        # We need to simulate ExpiredSignatureError being raised by jwt.decode
         with patch("jwt.decode", side_effect=jwt.ExpiredSignatureError("Expired")):
             with pytest.raises(HTTPException) as exc:
                 await parse_and_validate_token(header, session=mock_db_session)
@@ -231,12 +232,7 @@ async def test_update_draft_full_coverage(mock_db_session: AsyncMock) -> None:
     draft_id = uuid.uuid4()
     user_id = uuid.uuid4()
 
-    update = DraftUpdate(
-        title="New Title",
-        oas_content={"a": 1},
-        runtime_env="env",
-        # status Removed
-    )
+    update = DraftUpdate(title="New Title", oas_content={"a": 1}, runtime_env="env")
 
     def side_effect(stmt: Any, params: Any = None) -> MagicMock:
         query = str(stmt)
@@ -324,6 +320,67 @@ async def test_transition_draft_status_coverage(mock_db_session: AsyncMock) -> N
 
     res = await transition_draft_status(mock_db_session, draft_id, user_id, ApprovalStatus.PENDING)
     assert res.status == ApprovalStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_transition_draft_pending_to_approved(mock_db_session: AsyncMock) -> None:
+    """
+    Cover transition_draft_status: PENDING -> APPROVED (Valid).
+    """
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    auc_id = "test-auc"
+
+    mock_draft_row = {
+        "draft_id": draft_id,
+        "user_uuid": user_id,
+        "auc_id": auc_id,
+        "title": "Test",
+        "oas_content": {},
+        "status": ApprovalStatus.APPROVED,
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
+        "runtime_env": "reqs.txt",
+        "is_deleted": False,
+    }
+
+    def side_effect(stmt: Any, params: Any = None) -> MagicMock:
+        query = str(stmt)
+        res = MagicMock(spec=Result)
+        if "SELECT status" in query:
+            res.fetchone.return_value = (ApprovalStatus.PENDING,)
+        elif "UPDATE workbench.agent_drafts" in query:
+            res.mappings.return_value.fetchone.return_value = mock_draft_row
+        return res
+
+    mock_db_session.execute.side_effect = side_effect
+
+    res = await transition_draft_status(mock_db_session, draft_id, user_id, ApprovalStatus.APPROVED)
+    assert res.status == ApprovalStatus.APPROVED
+
+
+@pytest.mark.asyncio
+async def test_transition_draft_race_condition(mock_db_session: AsyncMock) -> None:
+    """
+    Cover transition_draft_status: Update returns no row (Simulate race or concurrent delete).
+    """
+    draft_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    def side_effect(stmt: Any, params: Any = None) -> MagicMock:
+        query = str(stmt)
+        res = MagicMock(spec=Result)
+        if "SELECT status" in query:
+            res.fetchone.return_value = (ApprovalStatus.DRAFT,)
+        elif "UPDATE workbench.agent_drafts" in query:
+            res.mappings.return_value.fetchone.return_value = None
+        return res
+
+    mock_db_session.execute.side_effect = side_effect
+
+    with pytest.raises(HTTPException) as exc:
+        await transition_draft_status(mock_db_session, draft_id, user_id, ApprovalStatus.PENDING)
+    assert exc.value.status_code == 404
 
 
 @pytest.mark.asyncio
