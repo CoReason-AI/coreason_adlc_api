@@ -9,18 +9,21 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import asyncio
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 import litellm
+from aiobreaker import CircuitBreaker, CircuitBreakerError
 from fastapi import HTTPException, status
 from loguru import logger
+from sqlmodel import select
 
-from coreason_adlc_api.db import get_pool
-from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
+from coreason_adlc_api.db import async_session_factory
+from coreason_adlc_api.db_models import Secret
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
 # Circuit Breaker Registry
-_breakers: Dict[str, AsyncCircuitBreaker] = {}
+_breakers: Dict[str, CircuitBreaker] = {}
 
 
 class InferenceProxyService:
@@ -29,9 +32,9 @@ class InferenceProxyService:
     Handles cost estimation, provider selection, API key retrieval, and circuit breaking.
     """
 
-    def get_circuit_breaker(self, provider: str) -> AsyncCircuitBreaker:
+    def get_circuit_breaker(self, provider: str) -> CircuitBreaker:
         if provider not in _breakers:
-            _breakers[provider] = AsyncCircuitBreaker(fail_max=5, reset_timeout=60)
+            _breakers[provider] = CircuitBreaker(fail_max=5, timeout_duration=timedelta(seconds=60))
         return _breakers[provider]
 
     def get_provider_for_model(self, model: str) -> str:
@@ -43,26 +46,22 @@ class InferenceProxyService:
             return model.split("/")[0] if "/" in model else "openai"
 
     async def get_api_key_for_model(self, auc_id: str, model: str) -> str:
-        pool = get_pool()
         provider = self.get_provider_for_model(model)
 
-        query = """
-            SELECT encrypted_value
-            FROM vault.secrets
-            WHERE auc_id = $1 AND service_name = $2
-        """
-        row = await pool.fetchrow(query, auc_id, provider)
+        async with async_session_factory() as session:
+            statement = select(Secret).where(Secret.auc_id == auc_id, Secret.service_name == provider)
+            result = await session.exec(statement)
+            secret = result.first()
 
-        if not row:
+        if not secret:
             logger.error(f"No API key found for project {auc_id} service {provider}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"API Key not configured for {provider} in this project."
             )
 
-        encrypted_value = row["encrypted_value"]
         try:
             crypto = VaultCrypto()
-            return crypto.decrypt_secret(encrypted_value)
+            return crypto.decrypt_secret(secret.encrypted_value)
         except Exception as e:
             logger.error(f"Decryption failed for {auc_id}/{provider}: {e}")
             raise HTTPException(
@@ -85,12 +84,15 @@ class InferenceProxyService:
             }
 
             breaker = self.get_circuit_breaker(provider)
-            async with breaker:
-                response = await litellm.acompletion(**kwargs)
 
-            return response
+            # Using standard aiobreaker call() pattern
+            # We create a closure or partial for the async call
+            async def _inference_call():
+                return await litellm.acompletion(**kwargs)
 
-        except CircuitBreakerOpenError as e:
+            return await breaker.call(_inference_call)
+
+        except CircuitBreakerError as e:
             logger.error(f"Circuit Breaker Open for Inference Proxy (Provider: {self.get_provider_for_model(model)})")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

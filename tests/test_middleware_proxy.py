@@ -14,7 +14,6 @@ from unittest import mock
 import pytest
 from fastapi import HTTPException
 from aiobreaker import CircuitBreakerError
-from aiobreaker.state import CircuitOpenState
 
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
 from coreason_adlc_api.db_models import Secret
@@ -116,11 +115,9 @@ async def test_proxy_circuit_breaker(
 
     # Manually trip by mocking state or using open() method if available
     # aiobreaker CircuitBreaker has .open() method
-    breaker.open()
+    breaker.open() # type: ignore[attr-defined]
 
     # Verify it is open
-    # We might need to handle the fact that aiobreaker checks time.
-    # But calling .open() sets state to Open.
 
     # Next call should raise ServiceUnavailable (Circuit Open) immediately
 
@@ -131,4 +128,4 @@ async def test_proxy_circuit_breaker(
     assert "Upstream model service is currently unstable" in exc.value.detail
 
     # Cleanup
-    breaker.close()
+    breaker.close() # type: ignore[attr-defined]
