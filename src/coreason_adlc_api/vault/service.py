@@ -8,12 +8,16 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
+from sqlmodel import select
+from sqlalchemy.dialects.postgresql import insert
 
-from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.db import async_session_factory
+from coreason_adlc_api.db_models import Secret
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
 # Initialize VaultCrypto once or per request?
@@ -27,22 +31,33 @@ async def store_secret(auc_id: str, service_name: str, raw_api_key: str, user_uu
     """
     encrypted_value = vault_crypto.encrypt_secret(raw_api_key)
 
-    pool = get_pool()
-    query = """
-        INSERT INTO vault.secrets (auc_id, service_name, encrypted_value, created_by)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (auc_id, service_name) DO UPDATE
-        SET encrypted_value = EXCLUDED.encrypted_value,
-            created_by = EXCLUDED.created_by,
-            created_at = NOW()
-        RETURNING secret_id;
-    """
-
     try:
-        row = await pool.fetchrow(query, auc_id, service_name, encrypted_value, user_uuid)
-        if not row:
-            raise RuntimeError("Insert failed to return ID")
-        return row["secret_id"]  # type: ignore
+        async with async_session_factory() as session:
+            stmt = insert(Secret).values(
+                auc_id=auc_id,
+                service_name=service_name,
+                encrypted_value=encrypted_value,
+                created_by=user_uuid,
+                created_at=datetime.utcnow()
+            ).on_conflict_do_update(
+                index_elements=['auc_id', 'service_name'], # Requires unique constraint on these columns
+                set_=dict(
+                    encrypted_value=encrypted_value,
+                    created_by=user_uuid,
+                    created_at=datetime.utcnow()
+                )
+            ).returning(Secret.secret_id)
+
+            result = await session.exec(stmt) # type: ignore[call-overload]
+            secret_id = result.first()
+            await session.commit()
+
+            if not secret_id:
+                 # Should not happen with upsert returning
+                 raise RuntimeError("Upsert failed to return ID")
+
+            return secret_id
+
     except Exception as e:
         logger.error(f"Failed to store secret for {auc_id}/{service_name}: {e}")
         raise HTTPException(
@@ -55,16 +70,12 @@ async def retrieve_decrypted_secret(auc_id: str, service_name: str) -> str:
     Retrieves and decrypts an API key.
     This is an internal function for the Interceptor, NOT exposed via API.
     """
-    pool = get_pool()
-    query = """
-        SELECT encrypted_value
-        FROM vault.secrets
-        WHERE auc_id = $1 AND service_name = $2
-    """
+    async with async_session_factory() as session:
+        statement = select(Secret).where(Secret.auc_id == auc_id, Secret.service_name == service_name)
+        result = await session.exec(statement)
+        secret = result.first()
 
-    row = await pool.fetchrow(query, auc_id, service_name)
-    if not row:
+    if not secret:
         raise ValueError(f"No secret found for {service_name} in project {auc_id}")
 
-    encrypted_value = row["encrypted_value"]
-    return vault_crypto.decrypt_secret(encrypted_value)
+    return vault_crypto.decrypt_secret(secret.encrypted_value)

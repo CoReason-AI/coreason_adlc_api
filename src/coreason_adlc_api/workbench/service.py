@@ -9,13 +9,16 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import json
+from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException
 from loguru import logger
+from sqlmodel import select, col
 
-from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.db import async_session_factory
+from coreason_adlc_api.db_models import AgentDraft
 from coreason_adlc_api.workbench.locking import acquire_draft_lock, verify_lock_for_update
 from coreason_adlc_api.workbench.schemas import (
     AgentArtifact,
@@ -27,30 +30,35 @@ from coreason_adlc_api.workbench.schemas import (
 
 
 async def create_draft(draft: DraftCreate, user_uuid: UUID) -> DraftResponse:
-    pool = get_pool()
-    query = """
-        INSERT INTO workbench.agent_drafts
-        (user_uuid, auc_id, title, oas_content, runtime_env)
-        VALUES ($1, $2, $3, $4::jsonb, $5)
-        RETURNING *;
-    """
-    row = await pool.fetchrow(
-        query, user_uuid, draft.auc_id, draft.title, json.dumps(draft.oas_content), draft.runtime_env
-    )
-    if not row:
-        raise RuntimeError("Failed to create draft")
-    return DraftResponse.model_validate(dict(row))
+    try:
+        async with async_session_factory() as session:
+            db_draft = AgentDraft(
+                user_uuid=user_uuid,
+                auc_id=draft.auc_id,
+                title=draft.title,
+                oas_content=draft.oas_content,
+                runtime_env=draft.runtime_env,
+            )
+            session.add(db_draft)
+            await session.commit()
+            await session.refresh(db_draft)
+            return DraftResponse.model_validate(db_draft)
+    except Exception as e:
+        logger.error(f"Failed to create draft: {e}")
+        raise RuntimeError("Failed to create draft") from e
 
 
 async def get_drafts(auc_id: str, include_deleted: bool = False) -> List[DraftResponse]:
-    pool = get_pool()
-    query = """
-        SELECT * FROM workbench.agent_drafts
-        WHERE auc_id = $1 AND ($2 = TRUE OR is_deleted = FALSE)
-        ORDER BY updated_at DESC;
-    """
-    rows = await pool.fetch(query, auc_id, include_deleted)
-    return [DraftResponse.model_validate(dict(r)) for r in rows]
+    async with async_session_factory() as session:
+        query = select(AgentDraft).where(AgentDraft.auc_id == auc_id)
+        if not include_deleted:
+            query = query.where(AgentDraft.is_deleted == False)  # noqa: E712
+
+        query = query.order_by(col(AgentDraft.updated_at).desc())
+
+        result = await session.exec(query)
+        drafts = result.all()
+        return [DraftResponse.model_validate(d) for d in drafts]
 
 
 async def get_draft_by_id(draft_id: UUID, user_uuid: UUID, roles: List[str]) -> Optional[DraftResponse]:
@@ -62,25 +70,28 @@ async def get_draft_by_id(draft_id: UUID, user_uuid: UUID, roles: List[str]) -> 
             return None
         raise e
 
-    pool = get_pool()
-    query = "SELECT * FROM workbench.agent_drafts WHERE draft_id = $1;"
-    row = await pool.fetchrow(query, draft_id)
-    if not row:
+    async with async_session_factory() as session:
+        statement = select(AgentDraft).where(AgentDraft.draft_id == draft_id)
+        result = await session.exec(statement)
+        draft = result.first()
+
+    if not draft:
         return None
 
-    resp = DraftResponse.model_validate(dict(row))
+    resp = DraftResponse.model_validate(draft)
     resp.mode = mode
     return resp
 
 
 async def _check_status_for_update(draft_id: UUID) -> None:
-    pool = get_pool()
-    query = "SELECT status FROM workbench.agent_drafts WHERE draft_id = $1"
-    status_row = await pool.fetchrow(query, draft_id)
-    if not status_row:
+    async with async_session_factory() as session:
+        statement = select(AgentDraft.status).where(AgentDraft.draft_id == draft_id)
+        result = await session.exec(statement)
+        status = result.first()
+
+    if not status:
         raise HTTPException(status_code=404, detail="Draft not found")
 
-    status = status_row["status"]
     if status not in (ApprovalStatus.DRAFT, ApprovalStatus.REJECTED):
         raise HTTPException(
             status_code=409, detail=f"Cannot edit draft in '{status}' status. Must be DRAFT or REJECTED."
@@ -94,53 +105,32 @@ async def update_draft(draft_id: UUID, update: DraftUpdate, user_uuid: UUID) -> 
     # Verify Status (Cannot edit if PENDING or APPROVED)
     await _check_status_for_update(draft_id)
 
-    pool = get_pool()
+    async with async_session_factory() as session:
+        statement = select(AgentDraft).where(AgentDraft.draft_id == draft_id)
+        result = await session.exec(statement)
+        draft = result.first()
 
-    # Dynamic update query construction could be cleaner, but simple approach for now
-    fields: List[str] = []
-    args: List[Any] = []
-    idx = 1
-
-    if update.title is not None:
-        fields.append(f"title = ${idx}")
-        args.append(update.title)
-        idx += 1
-    if update.oas_content is not None:
-        fields.append(f"oas_content = ${idx}::jsonb")
-        args.append(json.dumps(update.oas_content))
-        idx += 1
-    if update.runtime_env is not None:
-        fields.append(f"runtime_env = ${idx}")
-        args.append(update.runtime_env)
-        idx += 1
-
-    if not fields:
-        # No updates
-        # We pass empty roles list here because update_draft assumes we already hold the lock (verified above)
-        # So re-acquiring lock inside get_draft_by_id should succeed as we are the owner.
-        current = await get_draft_by_id(draft_id, user_uuid, [])
-        if not current:
+        if not draft:
             raise HTTPException(status_code=404, detail="Draft not found")
-        return current
 
-    fields.append("updated_at = NOW()")
+        updated = False
+        if update.title is not None:
+            draft.title = update.title
+            updated = True
+        if update.oas_content is not None:
+            draft.oas_content = update.oas_content
+            updated = True
+        if update.runtime_env is not None:
+            draft.runtime_env = update.runtime_env
+            updated = True
 
-    # WHERE clause
-    where_clause = f"WHERE draft_id = ${idx}"
-    args.append(draft_id)
+        if updated:
+            draft.updated_at = datetime.utcnow()
+            session.add(draft)
+            await session.commit()
+            await session.refresh(draft)
 
-    query = f"""
-        UPDATE workbench.agent_drafts
-        SET {", ".join(fields)}
-        {where_clause}
-        RETURNING *;
-    """
-
-    row = await pool.fetchrow(query, *args)
-    if not row:
-        raise HTTPException(status_code=404, detail="Draft not found")
-
-    return DraftResponse.model_validate(dict(row))
+        return DraftResponse.model_validate(draft)
 
 
 async def transition_draft_status(draft_id: UUID, user_uuid: UUID, new_status: ApprovalStatus) -> DraftResponse:
@@ -151,54 +141,41 @@ async def transition_draft_status(draft_id: UUID, user_uuid: UUID, new_status: A
     - PENDING -> REJECTED (Reject)
     - REJECTED -> PENDING (Re-submit)
     """
-    pool = get_pool()
+    async with async_session_factory() as session:
+        statement = select(AgentDraft).where(AgentDraft.draft_id == draft_id)
+        result = await session.exec(statement)
+        draft = result.first()
 
-    # Get current status
-    query = "SELECT status FROM workbench.agent_drafts WHERE draft_id = $1"
-    row = await pool.fetchrow(query, draft_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Draft not found")
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found")
 
-    current_status = row["status"]
+        current_status = ApprovalStatus(draft.status)
 
-    # Validate Transitions
-    allowed = False
-    if current_status == ApprovalStatus.DRAFT and new_status == ApprovalStatus.PENDING:
-        allowed = True
-    elif current_status == ApprovalStatus.REJECTED and new_status == ApprovalStatus.PENDING:
-        allowed = True
-    elif current_status == ApprovalStatus.PENDING and new_status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
-        # Check permissions for approval/rejection (Manager only)
-        # This function assumes the caller checks roles, but we can double check here if needed.
-        # For now, we rely on the router to check for MANAGER role.
-        allowed = True
-    else:
+        # Validate Transitions
         allowed = False
+        if current_status == ApprovalStatus.DRAFT and new_status == ApprovalStatus.PENDING:
+            allowed = True
+        elif current_status == ApprovalStatus.REJECTED and new_status == ApprovalStatus.PENDING:
+            allowed = True
+        elif current_status == ApprovalStatus.PENDING and new_status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
+            # Check permissions for approval/rejection (Manager only)
+            # This function assumes the caller checks roles, but we can double check here if needed.
+            # For now, we rely on the router to check for MANAGER role.
+            allowed = True
+        else:
+            allowed = False
 
-    if not allowed:
-        raise HTTPException(status_code=409, detail=f"Invalid transition from {current_status} to {new_status}")
+        if not allowed:
+            raise HTTPException(status_code=409, detail=f"Invalid transition from {current_status.value} to {new_status.value}")
 
-    # Perform Update
-    update_query = """
-        UPDATE workbench.agent_drafts
-        SET status = $1, updated_at = NOW()
-        WHERE draft_id = $2
-        RETURNING *;
-    """
-    updated_row = await pool.fetchrow(update_query, new_status.value, draft_id)
+        # Perform Update
+        draft.status = new_status.value
+        draft.updated_at = datetime.utcnow()
+        session.add(draft)
+        await session.commit()
+        await session.refresh(draft)
 
-    # We return the response. Note: We might need to mock locking info or fetch it fully.
-    # For simplicity, we re-fetch via get_draft_by_id to get full context including lock state.
-    # But get_draft_by_id attempts to acquire lock.
-    # Since we are just changing status, let's just return the object directly to avoid side-effects.
-
-    # Construct response manually to avoid lock overhead or just assume default lock state for response
-    # Actually, best to return consistent response.
-    # Let's map it directly.
-
-    res_dict = dict(updated_row)
-    # Locking info might be null if we didn't join, but the table has the columns.
-    return DraftResponse.model_validate(res_dict)
+        return DraftResponse.model_validate(draft)
 
 
 async def assemble_artifact(draft_id: UUID, user_oid: UUID) -> AgentArtifact:

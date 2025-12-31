@@ -10,6 +10,7 @@
 
 import asyncio
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional, cast
 from uuid import UUID
 
@@ -17,10 +18,13 @@ import httpx
 import jwt
 from fastapi import Header, HTTPException, status
 from loguru import logger
+from sqlmodel import select, col
+from sqlalchemy.dialects.postgresql import insert
 
 from coreason_adlc_api.auth.schemas import UserIdentity
 from coreason_adlc_api.config import settings
-from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.db import async_session_factory
+from coreason_adlc_api.db_models import User, GroupMapping
 from coreason_adlc_api.utils import get_http_client
 
 __all__ = [
@@ -157,19 +161,19 @@ async def map_groups_to_projects(group_oids: List[UUID]) -> List[str]:
     """
     Queries identity.group_mappings to determine allowed AUC IDs for the user's groups.
     """
-    pool = get_pool()
-
-    query = """
-        SELECT unnest(allowed_auc_ids) as auc_id
-        FROM identity.group_mappings
-        WHERE sso_group_oid = ANY($1::uuid[])
-    """
-
     try:
-        rows = await pool.fetch(query, group_oids)
-        # Deduplicate results
-        projects = list({row["auc_id"] for row in rows})
-        return projects
+        async with async_session_factory() as session:
+            statement = select(GroupMapping.allowed_auc_ids).where(col(GroupMapping.sso_group_oid).in_(group_oids))
+            results = await session.exec(statement)
+
+            projects = set()
+            for row in results:
+                # row is allowed_auc_ids (List[str])
+                if row:
+                    projects.update(row)
+
+            return list(projects)
+
     except Exception as e:
         logger.error(f"Failed to map groups to projects: {e}")
         # Fail safe: return empty list rather than exposing internal error
@@ -180,17 +184,24 @@ async def upsert_user(identity: UserIdentity) -> None:
     """
     Upserts the user into identity.users on login.
     """
-    pool = get_pool()
-    query = """
-        INSERT INTO identity.users (user_uuid, email, full_name, last_login)
-        VALUES ($1, $2, $3, NOW())
-        ON CONFLICT (user_uuid) DO UPDATE
-        SET email = EXCLUDED.email,
-            full_name = EXCLUDED.full_name,
-            last_login = EXCLUDED.last_login;
-    """
     try:
-        await pool.execute(query, identity.oid, identity.email, identity.full_name)
+        async with async_session_factory() as session:
+            stmt = insert(User).values(
+                user_uuid=identity.oid,
+                email=identity.email or "",
+                full_name=identity.full_name,
+                last_login=datetime.utcnow()
+            ).on_conflict_do_update(
+                index_elements=['user_uuid'],
+                set_=dict(
+                    email=identity.email or "",
+                    full_name=identity.full_name,
+                    last_login=datetime.utcnow()
+                )
+            )
+            await session.exec(stmt) # type: ignore[call-overload]
+            await session.commit()
+
     except Exception as e:
         logger.error(f"Failed to upsert user {identity.oid}: {e}")
         # Non-blocking error, but should be noted
