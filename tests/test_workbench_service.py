@@ -1,8 +1,8 @@
-from unittest.mock import MagicMock
 import pytest
-from coreason_adlc_api.workbench.service import WorkbenchService
+
 from coreason_adlc_api.workbench.schemas import DraftCreate
-from coreason_adlc_api.db_models import DraftModel
+from coreason_adlc_api.workbench.service import WorkbenchService
+
 
 @pytest.mark.asyncio
 async def test_create_draft_governance(mock_db_session, mock_user_identity):

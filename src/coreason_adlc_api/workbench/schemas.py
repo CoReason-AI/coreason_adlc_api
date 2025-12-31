@@ -10,7 +10,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,8 +29,8 @@ class ApprovalStatus(str, Enum):
 
 
 class DraftCreate(BaseModel):
-    project_id: str # Renamed from auc_id to match service usage
-    content: Dict[str, Any] # Renamed from oas_content/title split for simplicity in new service
+    project_id: str  # Renamed from auc_id to match service usage
+    content: Dict[str, Any]  # Renamed from oas_content/title split for simplicity in new service
 
 
 class DraftUpdate(BaseModel):
@@ -38,7 +38,7 @@ class DraftUpdate(BaseModel):
 
 
 class DraftResponse(BaseModel):
-    id: UUID = Field(alias="draft_id") # Map id -> draft_id if needed, or stick to id
+    id: UUID = Field(alias="draft_id")  # Map id -> draft_id if needed, or stick to id
     project_id: str
     content: Dict[str, Any]
     status: ApprovalStatus
@@ -62,14 +62,15 @@ class AgentArtifact(BaseModel):
     project_id: str
     version: str
     content: dict[str, Any]
-    content_hash: str # Renamed from compliance_hash?
+    content_hash: str  # Renamed from compliance_hash?
     author_signature: str | None = None
     created_at: datetime
 
 
 class PublishRequest(BaseModel):
-    content_hash: str # Verify integrity
+    content_hash: str  # Verify integrity
     signature: str
+
 
 class ArtifactResponse(BaseModel):
     id: UUID
@@ -80,6 +81,7 @@ class ArtifactResponse(BaseModel):
     created_at: datetime
     created_by: UUID
 
+
 class ReviewRequest(BaseModel):
-    decision: str # APPROVE / REJECT
+    decision: str  # APPROVE / REJECT
     comment: Optional[str] = None

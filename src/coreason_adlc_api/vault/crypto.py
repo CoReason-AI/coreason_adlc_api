@@ -71,3 +71,26 @@ class VaultCrypto:
             return plaintext.decode("utf-8")
         except Exception:
             raise ValueError("Decryption failed. Invalid key or corrupted data.") from None
+
+    # Static wrappers for easier usage in service (if pattern requires static)
+    # But usually DI is better. However, let's look at usage in service.py:
+    # `encrypted = VaultCrypto.encrypt(secret_value)` -> It was using static methods!
+    # The file has instance methods `encrypt_secret`.
+    # I should change service to instantiate or add static helpers.
+
+    @staticmethod
+    def encrypt(raw_value: str) -> bytes:
+        """Static helper."""
+        # Convert to bytes for DB storage as requested by model `encrypted_value: bytes`
+        # But wait, `encrypt_secret` returns base64 str.
+        # DB model has `encrypted_value: bytes`.
+        # Let's adjust.
+        vc = VaultCrypto()
+        enc_str = vc.encrypt_secret(raw_value)
+        return enc_str.encode("utf-8")
+
+    @staticmethod
+    def decrypt(encrypted_value: bytes) -> str:
+        """Static helper."""
+        vc = VaultCrypto()
+        return vc.decrypt_secret(encrypted_value.decode("utf-8"))

@@ -8,15 +8,15 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import uvicorn
-import typer
 import asyncio
 
-from coreason_adlc_api.app import create_app
-from coreason_adlc_api.config import settings
+import typer
+import uvicorn
+
 from coreason_adlc_api.telemetry.arq_worker import WorkerSettings
 
 app_typer = typer.Typer()
+
 
 @app_typer.command()
 def start(
@@ -37,16 +37,20 @@ def start(
         log_level="info",
     )
 
+
 @app_typer.command()
 def worker():
     """
     Start the ARQ telemetry worker.
     """
     from arq import run_worker
-    asyncio.run(run_worker(WorkerSettings)) # type: ignore
+
+    asyncio.run(run_worker(WorkerSettings))  # type: ignore
+
 
 def main():
     app_typer()
+
 
 if __name__ == "__main__":
     main()

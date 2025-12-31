@@ -13,10 +13,11 @@ import os
 import uuid
 from typing import Any, Dict
 
-from coreason_adlc_api.db import async_session_factory, init_db, close_db
+from coreason_adlc_api.db import async_session_factory, close_db, init_db
 from coreason_adlc_api.db_models import TelemetryLog
 
 logger = logging.getLogger(__name__)
+
 
 async def store_telemetry(ctx: Dict[str, Any], data: Dict[str, Any]) -> None:
     """
@@ -55,9 +56,11 @@ async def startup(ctx: Dict[str, Any]) -> None:
     await init_db()
     logger.info("Telemetry worker started.")
 
+
 async def shutdown(ctx: Dict[str, Any]) -> None:
     await close_db()
     logger.info("Telemetry worker stopped.")
+
 
 class WorkerSettings:
     functions = [store_telemetry]

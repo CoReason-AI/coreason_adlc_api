@@ -38,17 +38,24 @@ class AuthenticationError(ClientError):
 
     pass
 
+
 class AccessDeniedError(AuthenticationError):
     """Exception raised for 403 Forbidden Errors (specific permission denied)."""
+
     pass
+
 
 class ResourceNotFoundError(ClientError):
     """Exception raised for 404 Not Found Errors."""
+
     pass
+
 
 class DraftLockedError(ClientError):
     """Exception raised when a draft is locked by another user."""
+
     pass
+
 
 class BudgetExceededError(ClientError):
     """Exception raised for 402 Budget Exceeded Errors."""

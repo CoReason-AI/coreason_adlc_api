@@ -12,15 +12,17 @@ import os
 import contextlib
 from typing import AsyncGenerator
 
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 # Use sqlmodel's AsyncSession to get .exec() support, but we need
 # create_async_engine from sqlalchemy.ext.asyncio (which is compatible).
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    f"postgresql+asyncpg://{os.getenv('POSTGRES_USER', 'postgres')}:{os.getenv('POSTGRES_PASSWORD', 'postgres')}@{os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5432')}/{os.getenv('POSTGRES_DB', 'coreason_adlc')}"
+    f"postgresql+asyncpg://{os.getenv('POSTGRES_USER', 'postgres')}:{os.getenv('POSTGRES_PASSWORD', 'postgres')}@"
+    f"{os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5432')}/"
+    f"{os.getenv('POSTGRES_DB', 'coreason_adlc')}"
 )
 
 # Create the engine
@@ -29,12 +31,8 @@ engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 
 # Create a session factory
 # Note: we use AsyncSession from sqlmodel.ext.asyncio.session
-async_session_factory = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False
-)
+async_session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
+
 
 async def init_db() -> None:
     """
@@ -46,14 +44,17 @@ async def init_db() -> None:
     # Or just a placeholder if using migrations.
     pass
 
+
 async def close_db() -> None:
     """Closes the database connection pool."""
     await engine.dispose()
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for getting a database session."""
     async with async_session_factory() as session:
         yield session
+
 
 @contextlib.asynccontextmanager
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

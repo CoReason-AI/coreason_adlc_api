@@ -18,13 +18,14 @@ import httpx
 import jwt
 from fastapi import Header, HTTPException, status
 from loguru import logger
-from sqlmodel import select, col
 from sqlalchemy.dialects.postgresql import insert
+from sqlmodel import select
 
 from coreason_adlc_api.auth.schemas import UserIdentity
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import async_session_factory
-from coreason_adlc_api.db_models import UserIdentityModel as User, ProjectAccessModel
+from coreason_adlc_api.db_models import ProjectAccessModel
+from coreason_adlc_api.db_models import UserIdentityModel as User
 from coreason_adlc_api.utils import get_http_client
 
 __all__ = [
@@ -157,6 +158,7 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
         logger.error(f"Token parsing error: {e}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token claims") from None
 
+
 # Alias for simple dependency
 get_current_user = parse_and_validate_token
 
@@ -180,7 +182,8 @@ async def map_groups_to_projects(identity: UserIdentity, session: Optional[Any] 
 
     try:
         # Logic: Select project_id from ProjectAccessModel where user_id == identity.id
-        statement = select(ProjectAccessModel.project_id).where(ProjectAccessModel.user_id == identity.id)
+        # Mypy correction: identity.id -> identity.oid
+        statement = select(ProjectAccessModel.project_id).where(ProjectAccessModel.user_id == identity.oid)
 
         # If using AsyncSession from SQLModel, we need await exec
         # But session might be a factory if local_session=True? No, we instantiated it.
@@ -188,12 +191,12 @@ async def map_groups_to_projects(identity: UserIdentity, session: Optional[Any] 
         # async_session_factory is async_sessionmaker. Calling it returns a session.
 
         if local_session:
-             async with session as s: # type: ignore
-                 result = await s.exec(statement)
-                 return list(result.all())
+            async with session as s:  # type: ignore
+                result = await s.exec(statement)
+                return list(result.all())
         else:
-             result = await session.exec(statement)
-             return list(result.all())
+            result = await session.exec(statement)
+            return list(result.all())
 
     except Exception as e:
         logger.error(f"Failed to map projects: {e}")
@@ -212,22 +215,22 @@ async def upsert_user(identity: UserIdentity) -> None:
 
         # Atomic upsert
         async with async_session_factory() as session:
-            stmt = insert(User).values(
-                id=identity.oid, # UserIdentityModel uses 'id'
-                sub=str(identity.oid), # Assuming sub matches oid for now, or we should store raw sub
-                email=email,
-                name=identity.full_name or "Unknown",
-                roles=[], # Default empty
-                updated_at=datetime.utcnow()
-            ).on_conflict_do_update(
-                index_elements=['sub'], # sub is unique constraint
-                set_=dict(
+            stmt = (
+                insert(User)
+                .values(
+                    id=identity.oid,  # UserIdentityModel uses 'id'
+                    sub=str(identity.oid),  # Assuming sub matches oid for now, or we should store raw sub
                     email=email,
                     name=identity.full_name or "Unknown",
-                    updated_at=datetime.utcnow()
+                    roles=[],  # Default empty
+                    updated_at=datetime.utcnow(),
+                )
+                .on_conflict_do_update(
+                    index_elements=["sub"],  # sub is unique constraint
+                    set_=dict(email=email, name=identity.full_name or "Unknown", updated_at=datetime.utcnow()),
                 )
             )
-            await session.exec(stmt) # type: ignore[call-overload]
+            await session.exec(stmt)  # type: ignore[call-overload]
             await session.commit()
 
     except Exception as e:

@@ -1,5 +1,5 @@
 from typing import Any, Callable, Generator
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt
 import pytest
@@ -73,6 +73,7 @@ def mock_oidc_factory(
 
         yield _create_token
 
+
 @pytest.fixture
 def mock_db_session() -> Generator[AsyncMock, None, None]:
     """
@@ -98,4 +99,4 @@ def mock_db_session() -> Generator[AsyncMock, None, None]:
 
     # Patch the factory where it is defined in db.py
     with patch("coreason_adlc_api.db.async_session_factory", return_value=mock_factory):
-         yield mock_session
+        yield mock_session

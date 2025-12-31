@@ -8,13 +8,13 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import uuid
 import logging
-from typing import Optional, List
+import uuid
+from typing import List, Optional
 
+from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.dialects.postgresql import insert
 
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects
 from coreason_adlc_api.db_models import SecretModel
@@ -22,6 +22,7 @@ from coreason_adlc_api.exceptions import AccessDeniedError, ResourceNotFoundErro
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
 logger = logging.getLogger(__name__)
+
 
 class VaultService:
     def __init__(self, session: AsyncSession, user: UserIdentity):
@@ -45,16 +46,17 @@ class VaultService:
         encrypted = VaultCrypto.encrypt(secret_value)
 
         # Atomic upsert using PostgreSQL ON CONFLICT
-        stmt = insert(SecretModel).values(
-            project_id=project_id,
-            key_name=key_name,
-            encrypted_value=encrypted
-        ).on_conflict_do_update(
-            index_elements=["project_id", "key_name"],
-            set_={"encrypted_value": encrypted, "updated_at": insert(SecretModel).excluded.updated_at}
-        ).returning(SecretModel.id)
+        stmt = (
+            insert(SecretModel)
+            .values(project_id=project_id, key_name=key_name, encrypted_value=encrypted)
+            .on_conflict_do_update(
+                index_elements=["project_id", "key_name"],
+                set_={"encrypted_value": encrypted, "updated_at": insert(SecretModel).excluded.updated_at},
+            )
+            .returning(SecretModel.id)
+        )
 
-        result = await self.session.exec(stmt) # type: ignore
+        result = await self.session.exec(stmt)  # type: ignore
         secret_id = result.one()
         await self.session.commit()
         return secret_id
@@ -65,10 +67,7 @@ class VaultService:
         """
         await self._check_access(project_id)
 
-        query = select(SecretModel).where(
-            SecretModel.project_id == project_id,
-            SecretModel.key_name == key_name
-        )
+        query = select(SecretModel).where(SecretModel.project_id == project_id, SecretModel.key_name == key_name)
         result = await self.session.exec(query)
         secret = result.first()
 
@@ -93,10 +92,7 @@ class VaultService:
         """
         await self._check_access(project_id)
 
-        query = select(SecretModel).where(
-            SecretModel.project_id == project_id,
-            SecretModel.key_name == key_name
-        )
+        query = select(SecretModel).where(SecretModel.project_id == project_id, SecretModel.key_name == key_name)
         result = await self.session.exec(query)
         secret = result.first()
 

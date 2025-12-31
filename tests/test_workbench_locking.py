@@ -1,16 +1,20 @@
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 
-from coreason_adlc_api.workbench.locking import DraftLockManager
-from coreason_adlc_api.exceptions import DraftLockedError
+import pytest
+
 from coreason_adlc_api.db_models import DraftModel
+from coreason_adlc_api.exceptions import DraftLockedError
+from coreason_adlc_api.workbench.locking import DraftLockManager
+
 
 @pytest.mark.asyncio
 async def test_acquire_lock_success(mock_db_session, mock_user_identity):
     manager = DraftLockManager(mock_db_session, mock_user_identity)
 
     # Mock finding a draft
-    mock_draft = DraftModel(id="00000000-0000-0000-0000-000000000001", project_id="p1", created_by=mock_user_identity.id)
+    mock_draft = DraftModel(
+        id="00000000-0000-0000-0000-000000000001", project_id="p1", created_by=mock_user_identity.id
+    )
 
     # Mock session.exec().one_or_none()
     mock_result = MagicMock()
@@ -22,6 +26,7 @@ async def test_acquire_lock_success(mock_db_session, mock_user_identity):
     assert mock_draft.locked_by == mock_user_identity.id
     assert mock_db_session.commit.called
 
+
 @pytest.mark.asyncio
 async def test_acquire_lock_fail_locked(mock_db_session, mock_user_identity):
     manager = DraftLockManager(mock_db_session, mock_user_identity)
@@ -29,13 +34,14 @@ async def test_acquire_lock_fail_locked(mock_db_session, mock_user_identity):
     # Draft locked by someone else
     import uuid
     from datetime import datetime
+
     other_user = uuid.uuid4()
     mock_draft = DraftModel(
         id="00000000-0000-0000-0000-000000000001",
         project_id="p1",
         created_by=mock_user_identity.id,
         locked_by=other_user,
-        locked_at=datetime.utcnow()
+        locked_at=datetime.utcnow(),
     )
 
     mock_result = MagicMock()

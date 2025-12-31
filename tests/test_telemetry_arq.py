@@ -1,10 +1,11 @@
-from unittest.mock import MagicMock, patch
 from typing import Any, Dict
+from unittest.mock import patch
 
 import pytest
 
-from coreason_adlc_api.telemetry.arq_worker import store_telemetry
 from coreason_adlc_api.db_models import TelemetryLog
+from coreason_adlc_api.telemetry.arq_worker import store_telemetry
+
 
 @pytest.mark.asyncio
 async def test_arq_worker_store_telemetry(mock_db_session: Any) -> None:

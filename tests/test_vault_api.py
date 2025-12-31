@@ -8,11 +8,12 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
+
 from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import UserIdentity
 from coreason_adlc_api.vault.service import VaultService
@@ -20,18 +21,16 @@ from coreason_adlc_api.vault.service import VaultService
 # We need to mock get_vault_service dependency in the app, or mock its internals.
 # Since we are testing API, mocking the service is cleaner.
 
+
 @pytest.fixture
 def client():
     return TestClient(app)
 
+
 @pytest.fixture
 def mock_user_identity():
-    return UserIdentity(
-        oid=uuid4(),
-        email="test@example.com",
-        groups=[],
-        full_name="Test User"
-    )
+    return UserIdentity(oid=uuid4(), email="test@example.com", groups=[], full_name="Test User")
+
 
 @pytest.fixture
 def mock_vault_service():
@@ -39,6 +38,7 @@ def mock_vault_service():
     service.store_secret = AsyncMock()
     service.get_secret = AsyncMock()
     return service
+
 
 def test_store_secret_endpoint(client, mock_user_identity, mock_vault_service):
     # Override dependencies
@@ -49,12 +49,8 @@ def test_store_secret_endpoint(client, mock_user_identity, mock_vault_service):
 
     response = client.post(
         "/api/v1/vault/secrets",
-        json={
-            "auc_id": "test-project",
-            "service_name": "openai_api_key",
-            "raw_api_key": "sk-1234567890"
-        },
-        headers={"Authorization": "Bearer mock_token"}
+        json={"auc_id": "test-project", "service_name": "openai_api_key", "raw_api_key": "sk-1234567890"},
+        headers={"Authorization": "Bearer mock_token"},
     )
 
     assert response.status_code == 201

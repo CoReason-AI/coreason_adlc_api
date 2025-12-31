@@ -10,26 +10,29 @@
 
 import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token, get_current_user # Assuming get_current_user wraps parse_and_validate
+from coreason_adlc_api.auth.identity import (
+    UserIdentity,
+    parse_and_validate_token,
+)  # Assuming get_current_user wraps parse_and_validate
+from coreason_adlc_api.db import get_db
 from coreason_adlc_api.vault.schemas import CreateSecretRequest, SecretResponse
 from coreason_adlc_api.vault.service import VaultService
-from coreason_adlc_api.db import get_db
 
 router = APIRouter(prefix="/vault", tags=["Vault"])
 
+
 async def get_vault_service(
-    session: AsyncSession = Depends(get_db),
-    user: UserIdentity = Depends(parse_and_validate_token)
+    session: AsyncSession = Depends(get_db), user: UserIdentity = Depends(parse_and_validate_token)
 ) -> VaultService:
     return VaultService(session, user)
 
+
 @router.post("/secrets", response_model=SecretResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update_secret(
-    request: CreateSecretRequest,
-    service: VaultService = Depends(get_vault_service)
+    request: CreateSecretRequest, service: VaultService = Depends(get_vault_service)
 ) -> SecretResponse:
     """
     Encrypts and stores a new API key.
@@ -41,9 +44,7 @@ async def create_or_update_secret(
     # Schema says service_name, DB says key_name.
 
     secret_id = await service.store_secret(
-        project_id=request.auc_id,
-        key_name=request.service_name,
-        secret_value=request.raw_api_key
+        project_id=request.auc_id, key_name=request.service_name, secret_value=request.raw_api_key
     )
 
     return SecretResponse(

@@ -30,6 +30,10 @@ repos:
           - litellm
           - alembic
           - sqlalchemy
+          - sqlmodel
+          - arq
+          - aiobreaker
+          - tenacity
   - repo: https://github.com/AleksaC/hadolint-py
     rev: v2.14.0
     hooks:

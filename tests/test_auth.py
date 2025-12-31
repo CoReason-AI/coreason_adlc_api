@@ -320,36 +320,13 @@ async def test_map_groups_to_projects(mock_db_session) -> None:
 
     # Mock SQLModel select results
     # Query returns allowed_auc_ids list (as scalars if we select ProjectAccessModel.project_id)
-    # result.all() returns [("project-alpha"), ("project-beta")] or list of strings depending on query.
-    # We used `select(ProjectAccessModel.project_id)`.
-    # SQLModel exec().all() returns rows. If selecting scalar, it returns list of scalars (like 1.4 future=True)?
-    # Actually sqlmodel exec() returns a Result object. .all() on it returns list of Row or scalars.
-    # If selecting one column, it usually returns simple values if using scalars().all(),
-    # but here we used `session.exec(select(col))`.
+    # result.all() returns list of rows/scalars.
 
-    # Let's mock the result to be what `map_groups_to_projects` expects.
-    # The impl does: `return list(result.all())`.
-    # If it returns rows, it might be `('project-alpha',)` tuples.
-    # But new impl returns `list(result.all())`.
-    # If `select(ProjectAccessModel.project_id)` is used, it returns rows of 1 element.
-    # Wait, in the impl: `return list(result.all())`.
-    # If result.all() returns `[('p1',), ('p2',)]`, then return is `[('p1',), ('p2',)]`.
-    # This might be wrong type for `List[str]`.
+    # When using `session.exec(select(col))`, it returns a Result object.
+    # The code `list(result.all())` expects the `all()` method to return the list of values.
+    # If the mocked `all()` returns `["project-alpha", "project-beta"]`, `list()` will wrap it if it's not already a list or consume it.
 
-    # We should fix the implementation to use `.scalars().all()` or extract.
-    # But for now, let's fix the test to match what we assume or fix impl.
-    # The failing test `assert 0 == 2` means it returned empty list.
-
-    # Mock return value of `mock_db_session.exec.return_value.all.return_value`.
-    # The previous test setup returned `[(["p1"],), ...]`.
-    # If the code iterates and doesn't find attributes, it might fail or return empty.
-
-    # In `map_groups_to_projects` (new impl):
-    # statement = select(ProjectAccessModel.project_id).where(...)
-    # result = await session.exec(statement)
-    # return list(result.all())
-
-    # If I mock `result.all.return_value = ["p1", "p2"]`, it returns `["p1", "p2"]`.
+    # Fix: Ensure mock returns a list of valid project IDs directly.
     mock_db_session.exec.return_value.all.return_value = ["project-alpha", "project-beta"]
 
     with patch("coreason_adlc_api.auth.identity.async_session_factory") as mock_factory:

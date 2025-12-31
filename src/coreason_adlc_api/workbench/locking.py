@@ -11,18 +11,18 @@
 import logging
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from coreason_adlc_api.db_models import DraftModel
 from coreason_adlc_api.auth.identity import UserIdentity
+from coreason_adlc_api.db_models import DraftModel
 from coreason_adlc_api.exceptions import DraftLockedError
 
 logger = logging.getLogger(__name__)
 
 LOCK_TIMEOUT_MINUTES = 30
+
 
 class DraftLockManager:
     """
@@ -52,19 +52,20 @@ class DraftLockManager:
         draft = result.one_or_none()
 
         if not draft:
-            return False # Draft not found
+            return False  # Draft not found
 
         now = datetime.utcnow()
 
         # Check existing lock
-        if draft.locked_by and draft.locked_by != self.user.id:
+        # Mypy: user.id -> user.oid
+        if draft.locked_by and draft.locked_by != self.user.oid:
             # Check timeout
             if draft.locked_at and (now - draft.locked_at) < timedelta(minutes=LOCK_TIMEOUT_MINUTES):
                 if force:
                     # Check if user is manager (role check logic here or passed in)
                     # For now, assuming caller handles role check or we check here
                     # simple overwrite
-                    logger.info(f"User {self.user.id} forcing lock on draft {draft_id}")
+                    logger.info(f"User {self.user.oid} forcing lock on draft {draft_id}")
                 else:
                     raise DraftLockedError(f"Draft is locked by user {draft.locked_by}")
             else:
@@ -72,7 +73,7 @@ class DraftLockManager:
                 logger.info(f"Lock expired on draft {draft_id}, taking over.")
 
         # Set lock
-        draft.locked_by = self.user.id
+        draft.locked_by = self.user.oid
         draft.locked_at = now
         self.session.add(draft)
         await self.session.commit()
@@ -89,7 +90,8 @@ class DraftLockManager:
         if not draft:
             return False
 
-        if draft.locked_by == self.user.id:
+        # Mypy: user.id -> user.oid
+        if draft.locked_by == self.user.oid:
             draft.locked_by = None
             draft.locked_at = None
             self.session.add(draft)
@@ -107,10 +109,11 @@ class DraftLockManager:
         draft = result.one_or_none()
 
         if not draft:
-             # Should be 404, but strict lock check might just fail
-             raise DraftLockedError("Draft not found")
+            # Should be 404, but strict lock check might just fail
+            raise DraftLockedError("Draft not found")
 
-        if draft.locked_by != self.user.id:
-             # Check if expired?
-             # For strict checking during save, we assume we must actively hold it.
-             raise DraftLockedError(f"Draft is locked by {draft.locked_by}")
+        # Mypy: user.id -> user.oid
+        if draft.locked_by != self.user.oid:
+            # Check if expired?
+            # For strict checking during save, we assume we must actively hold it.
+            raise DraftLockedError(f"Draft is locked by {draft.locked_by}")

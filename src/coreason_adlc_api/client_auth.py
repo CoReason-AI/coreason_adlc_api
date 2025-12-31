@@ -123,8 +123,8 @@ class ClientAuthManager:
             print("Successfully authenticated!")
             return token_data.access_token
 
-        except RetryError:
-            raise RuntimeError("Authentication timed out.")
+        except RetryError as e:
+            raise RuntimeError("Authentication timed out.") from e
         except Exception as e:
             raise RuntimeError(f"Authentication failed: {e}") from e
 

@@ -9,42 +9,42 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import logging
-from typing import List, Dict, Any, Generator
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from coreason_adlc_api.auth.identity import get_current_user, UserIdentity
+from coreason_adlc_api.auth.identity import UserIdentity, get_current_user
+from coreason_adlc_api.db import get_db
+from coreason_adlc_api.workbench.locking import DraftLockManager
 from coreason_adlc_api.workbench.schemas import (
-    DraftCreate, DraftResponse, DraftUpdate, ArtifactResponse, PublishRequest,
-    ReviewRequest
+    ArtifactResponse,
+    DraftCreate,
+    DraftResponse,
+    DraftUpdate,
+    PublishRequest,
+    ReviewRequest,
 )
 from coreason_adlc_api.workbench.service import WorkbenchService
-from coreason_adlc_api.workbench.locking import DraftLockManager
-from coreason_adlc_api.db import get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workbench", tags=["workbench"])
 
+
 async def get_service(
-    session: AsyncSession = Depends(get_db),
-    user: UserIdentity = Depends(get_current_user)
+    session: AsyncSession = Depends(get_db), user: UserIdentity = Depends(get_current_user)
 ) -> WorkbenchService:
     return WorkbenchService(session, user)
 
+
 async def get_lock_manager(
-    session: AsyncSession = Depends(get_db),
-    user: UserIdentity = Depends(get_current_user)
+    session: AsyncSession = Depends(get_db), user: UserIdentity = Depends(get_current_user)
 ) -> DraftLockManager:
     return DraftLockManager(session, user)
 
 
 @router.post("/drafts", response_model=DraftResponse, status_code=201)
-async def create_draft(
-    draft_in: DraftCreate,
-    service: WorkbenchService = Depends(get_service)
-) -> DraftResponse:
+async def create_draft(draft_in: DraftCreate, service: WorkbenchService = Depends(get_service)) -> DraftResponse:
     """
     Creates a new draft for a project.
     """
@@ -52,10 +52,7 @@ async def create_draft(
 
 
 @router.get("/drafts/{draft_id}", response_model=DraftResponse)
-async def get_draft(
-    draft_id: str,
-    service: WorkbenchService = Depends(get_service)
-) -> DraftResponse:
+async def get_draft(draft_id: str, service: WorkbenchService = Depends(get_service)) -> DraftResponse:
     """
     Retrieves a draft by ID.
     """
@@ -67,7 +64,7 @@ async def update_draft(
     draft_id: str,
     draft_in: DraftUpdate,
     service: WorkbenchService = Depends(get_service),
-    lock_manager: DraftLockManager = Depends(get_lock_manager)
+    lock_manager: DraftLockManager = Depends(get_lock_manager),
 ) -> DraftResponse:
     """
     Updates a draft. Must have a valid lock or acquire one implicitly if allowed.
@@ -83,9 +80,7 @@ async def update_draft(
 
 @router.post("/drafts/{draft_id}/lock", response_model=bool)
 async def lock_draft(
-    draft_id: str,
-    force: bool = False,
-    lock_manager: DraftLockManager = Depends(get_lock_manager)
+    draft_id: str, force: bool = False, lock_manager: DraftLockManager = Depends(get_lock_manager)
 ) -> bool:
     """
     Acquires an exclusive lock on the draft for editing.
@@ -94,10 +89,7 @@ async def lock_draft(
 
 
 @router.delete("/drafts/{draft_id}/lock", response_model=bool)
-async def unlock_draft(
-    draft_id: str,
-    lock_manager: DraftLockManager = Depends(get_lock_manager)
-) -> bool:
+async def unlock_draft(draft_id: str, lock_manager: DraftLockManager = Depends(get_lock_manager)) -> bool:
     """
     Releases the lock on the draft.
     """
@@ -106,9 +98,7 @@ async def unlock_draft(
 
 @router.post("/drafts/{draft_id}/publish", response_model=ArtifactResponse)
 async def publish_draft(
-    draft_id: str,
-    publish_req: PublishRequest,
-    service: WorkbenchService = Depends(get_service)
+    draft_id: str, publish_req: PublishRequest, service: WorkbenchService = Depends(get_service)
 ) -> ArtifactResponse:
     """
     Publishes a draft as an immutable artifact.
@@ -118,9 +108,7 @@ async def publish_draft(
 
 @router.post("/drafts/{draft_id}/review", response_model=DraftResponse)
 async def review_draft(
-    draft_id: str,
-    review_req: ReviewRequest,
-    service: WorkbenchService = Depends(get_service)
+    draft_id: str, review_req: ReviewRequest, service: WorkbenchService = Depends(get_service)
 ) -> DraftResponse:
     """
     Submits a review (Approve/Reject) for a draft.

@@ -114,7 +114,7 @@ async def test_proxy_circuit_breaker(
     breaker = proxy_service.get_circuit_breaker("openai")
 
     # Mock call to simulate failure/open circuit
-    with mock.patch.object(breaker, 'call', side_effect=CircuitBreakerError("Circuit Open")):
+    with mock.patch.object(breaker, "call", side_effect=CircuitBreakerError("Circuit Open")):
         with pytest.raises(HTTPException) as exc:
             await proxy_service.execute_inference([], "gpt-4", "proj-1")
 
