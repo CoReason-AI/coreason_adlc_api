@@ -24,7 +24,7 @@ from sqlalchemy.dialects.postgresql import insert
 from coreason_adlc_api.auth.schemas import UserIdentity
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.db import async_session_factory
-from coreason_adlc_api.db_models import User, GroupMapping
+from coreason_adlc_api.db_models import UserIdentityModel as User, ProjectAccessModel
 from coreason_adlc_api.utils import get_http_client
 
 __all__ = [
@@ -33,6 +33,7 @@ __all__ = [
     "map_groups_to_projects",
     "upsert_user",
     "get_oidc_config",
+    "get_current_user",
 ]
 
 
@@ -156,26 +157,46 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
         logger.error(f"Token parsing error: {e}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token claims") from None
 
+# Alias for simple dependency
+get_current_user = parse_and_validate_token
 
-async def map_groups_to_projects(group_oids: List[UUID]) -> List[str]:
+
+async def map_groups_to_projects(identity: UserIdentity, session: Optional[Any] = None) -> List[str]:
     """
-    Queries identity.group_mappings to determine allowed AUC IDs for the user's groups.
+    Determines allowed project IDs for the user.
+    Uses ProjectAccessModel to look up grants.
+    Accepts an optional session for testing or dependency injection.
     """
+    # For now, if no groups/roles logic is complex, just return projects where user is assigned.
+    # The original implementation queried 'GroupMapping', but we switched to ProjectAccessModel for simplicity/standard RBAC.
+
+    # If session is None, use a fresh one (e.g. called from utility)
+    # But usually called with session.
+
+    local_session = False
+    if session is None:
+        session = async_session_factory()
+        local_session = True
+
     try:
-        async with async_session_factory() as session:
-            statement = select(GroupMapping.allowed_auc_ids).where(col(GroupMapping.sso_group_oid).in_(group_oids))
-            results = await session.exec(statement)
+        # Logic: Select project_id from ProjectAccessModel where user_id == identity.id
+        statement = select(ProjectAccessModel.project_id).where(ProjectAccessModel.user_id == identity.id)
 
-            projects = set()
-            for row in results.all():
-                # select(Model.col) returns rows of (val,).
-                if row and row[0]:
-                    projects.update(row[0])
+        # If using AsyncSession from SQLModel, we need await exec
+        # But session might be a factory if local_session=True? No, we instantiated it.
+        # Wait, async_session_factory() returns a session context manager usually?
+        # async_session_factory is async_sessionmaker. Calling it returns a session.
 
-            return list(projects)
+        if local_session:
+             async with session as s: # type: ignore
+                 result = await s.exec(statement)
+                 return list(result.all())
+        else:
+             result = await session.exec(statement)
+             return list(result.all())
 
     except Exception as e:
-        logger.error(f"Failed to map groups to projects: {e}")
+        logger.error(f"Failed to map projects: {e}")
         return []
 
 
@@ -185,20 +206,25 @@ async def upsert_user(identity: UserIdentity) -> None:
     """
     try:
         email = identity.email
-        # We assume email is provided as per UserIdentity schema validation, or allow None if schema allows.
+        if not email:
+            logger.warning(f"Skipping upsert for user {identity.oid} without email")
+            return
+
         # Atomic upsert
         async with async_session_factory() as session:
             stmt = insert(User).values(
-                user_uuid=identity.oid,
+                id=identity.oid, # UserIdentityModel uses 'id'
+                sub=str(identity.oid), # Assuming sub matches oid for now, or we should store raw sub
                 email=email,
-                full_name=identity.full_name,
-                last_login=datetime.utcnow()
+                name=identity.full_name or "Unknown",
+                roles=[], # Default empty
+                updated_at=datetime.utcnow()
             ).on_conflict_do_update(
-                index_elements=['user_uuid'],
+                index_elements=['sub'], # sub is unique constraint
                 set_=dict(
                     email=email,
-                    full_name=identity.full_name,
-                    last_login=datetime.utcnow()
+                    name=identity.full_name or "Unknown",
+                    updated_at=datetime.utcnow()
                 )
             )
             await session.exec(stmt) # type: ignore[call-overload]

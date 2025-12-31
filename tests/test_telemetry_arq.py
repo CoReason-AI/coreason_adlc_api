@@ -1,18 +1,17 @@
 from unittest.mock import MagicMock, patch
+from typing import Any, Dict
 
 import pytest
-from arq.worker import Worker
-from sqlmodel import SQLModel
 
-from coreason_adlc_api.telemetry.arq_worker import WorkerSettings, store_telemetry
+from coreason_adlc_api.telemetry.arq_worker import store_telemetry
 from coreason_adlc_api.db_models import TelemetryLog
 
 @pytest.mark.asyncio
-async def test_arq_worker_store_telemetry(mock_db_session):
+async def test_arq_worker_store_telemetry(mock_db_session: Any) -> None:
     """
     Verifies that the store_telemetry job correctly inserts data into the database.
     """
-    ctx = {}
+    ctx: Dict[str, Any] = {}
     data = {
         "user_uuid": "00000000-0000-0000-0000-000000000001",
         "auc_id": "test-project",

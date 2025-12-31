@@ -8,75 +8,101 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-from datetime import datetime
-from uuid import UUID
+import uuid
+import logging
+from typing import Optional, List
 
-from fastapi import HTTPException, status
-from loguru import logger
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 
-from coreason_adlc_api.db import async_session_factory
-from coreason_adlc_api.db_models import Secret
+from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects
+from coreason_adlc_api.db_models import SecretModel
+from coreason_adlc_api.exceptions import AccessDeniedError, ResourceNotFoundError
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
-# Initialize VaultCrypto once or per request?
-# Per request is safer if key rotation logic existed, but global is fine for now.
-vault_crypto = VaultCrypto()
+logger = logging.getLogger(__name__)
 
+class VaultService:
+    def __init__(self, session: AsyncSession, user: UserIdentity):
+        self.session = session
+        self.user = user
 
-async def store_secret(auc_id: str, service_name: str, raw_api_key: str, user_uuid: UUID) -> UUID:
-    """
-    Encrypts and stores an API key for a specific Project (AUC) and Service.
-    """
-    encrypted_value = vault_crypto.encrypt_secret(raw_api_key)
+    async def _check_access(self, project_id: str) -> None:
+        """
+        Verifies that the user has access to the given project.
+        """
+        allowed_projects = await map_groups_to_projects(self.user, self.session)
+        if project_id not in allowed_projects:
+            raise AccessDeniedError(f"User does not have access to project {project_id}")
 
-    try:
-        async with async_session_factory() as session:
-            stmt = insert(Secret).values(
-                auc_id=auc_id,
-                service_name=service_name,
-                encrypted_value=encrypted_value,
-                created_by=user_uuid,
-                created_at=datetime.utcnow()
-            ).on_conflict_do_update(
-                index_elements=['auc_id', 'service_name'],
-                set_=dict(
-                    encrypted_value=encrypted_value,
-                    created_by=user_uuid,
-                    created_at=datetime.utcnow()
-                )
-            ).returning(Secret.secret_id)
+    async def store_secret(self, project_id: str, key_name: str, secret_value: str) -> uuid.UUID:
+        """
+        Encrypts and stores a secret. Uses upsert logic.
+        """
+        await self._check_access(project_id)
 
-            result = await session.exec(stmt) # type: ignore[call-overload]
-            row = result.first()
+        encrypted = VaultCrypto.encrypt(secret_value)
 
-            if not row:
-                 raise RuntimeError("Upsert failed to return ID")
+        # Atomic upsert using PostgreSQL ON CONFLICT
+        stmt = insert(SecretModel).values(
+            project_id=project_id,
+            key_name=key_name,
+            encrypted_value=encrypted
+        ).on_conflict_do_update(
+            index_elements=["project_id", "key_name"],
+            set_={"encrypted_value": encrypted, "updated_at": insert(SecretModel).excluded.updated_at}
+        ).returning(SecretModel.id)
 
-            # Extract UUID from tuple (row is (uuid,))
-            secret_id = row[0]
-            await session.commit()
-            return secret_id
+        result = await self.session.exec(stmt) # type: ignore
+        secret_id = result.one()
+        await self.session.commit()
+        return secret_id
 
-    except Exception as e:
-        logger.error(f"Failed to store secret for {auc_id}/{service_name}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to securely store secret"
-        ) from e
+    async def get_secret(self, project_id: str, key_name: str) -> Optional[str]:
+        """
+        Retrieves and decrypts a secret.
+        """
+        await self._check_access(project_id)
 
-
-async def retrieve_decrypted_secret(auc_id: str, service_name: str) -> str:
-    """
-    Retrieves and decrypts an API key.
-    This is an internal function for the Interceptor, NOT exposed via API.
-    """
-    async with async_session_factory() as session:
-        statement = select(Secret).where(Secret.auc_id == auc_id, Secret.service_name == service_name)
-        result = await session.exec(statement)
+        query = select(SecretModel).where(
+            SecretModel.project_id == project_id,
+            SecretModel.key_name == key_name
+        )
+        result = await self.session.exec(query)
         secret = result.first()
 
-    if not secret:
-        raise ValueError(f"No secret found for {service_name} in project {auc_id}")
+        if not secret:
+            return None
 
-    return vault_crypto.decrypt_secret(secret.encrypted_value)
+        return VaultCrypto.decrypt(secret.encrypted_value)
+
+    async def list_secrets(self, project_id: str) -> List[str]:
+        """
+        Lists secret keys for a project.
+        """
+        await self._check_access(project_id)
+
+        query = select(SecretModel.key_name).where(SecretModel.project_id == project_id)
+        result = await self.session.exec(query)
+        return list(result.all())
+
+    async def delete_secret(self, project_id: str, key_name: str) -> bool:
+        """
+        Deletes a secret.
+        """
+        await self._check_access(project_id)
+
+        query = select(SecretModel).where(
+            SecretModel.project_id == project_id,
+            SecretModel.key_name == key_name
+        )
+        result = await self.session.exec(query)
+        secret = result.first()
+
+        if not secret:
+            raise ResourceNotFoundError(f"Secret {key_name} not found in project {project_id}")
+
+        await self.session.delete(secret)
+        await self.session.commit()
+        return True

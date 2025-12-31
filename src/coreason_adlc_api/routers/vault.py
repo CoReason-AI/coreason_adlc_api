@@ -11,35 +11,39 @@
 import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
+from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token, get_current_user # Assuming get_current_user wraps parse_and_validate
 from coreason_adlc_api.vault.schemas import CreateSecretRequest, SecretResponse
-from coreason_adlc_api.vault.service import store_secret
+from coreason_adlc_api.vault.service import VaultService
+from coreason_adlc_api.db import get_db
 
 router = APIRouter(prefix="/vault", tags=["Vault"])
 
+async def get_vault_service(
+    session: AsyncSession = Depends(get_db),
+    user: UserIdentity = Depends(parse_and_validate_token)
+) -> VaultService:
+    return VaultService(session, user)
 
 @router.post("/secrets", response_model=SecretResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update_secret(
-    request: CreateSecretRequest, identity: UserIdentity = Depends(parse_and_validate_token)
+    request: CreateSecretRequest,
+    service: VaultService = Depends(get_vault_service)
 ) -> SecretResponse:
     """
     Encrypts and stores a new API key.
     Requires Authentication.
     """
-    # Authorization check: Does user have access to this auc_id?
-    allowed_projects = await map_groups_to_projects(identity.groups)
-    if request.auc_id not in allowed_projects:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User is not authorized to access project {request.auc_id}",
-        )
+    # Authorization is handled in service
 
-    secret_id = await store_secret(
-        auc_id=request.auc_id,
-        service_name=request.service_name,
-        raw_api_key=request.raw_api_key,
-        user_uuid=identity.oid,
+    # We map request.service_name to 'key_name' in internal model, or similar?
+    # Schema says service_name, DB says key_name.
+
+    secret_id = await service.store_secret(
+        project_id=request.auc_id,
+        key_name=request.service_name,
+        secret_value=request.raw_api_key
     )
 
     return SecretResponse(

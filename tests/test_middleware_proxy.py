@@ -12,11 +12,11 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from fastapi import HTTPException
 from aiobreaker import CircuitBreakerError
+from fastapi import HTTPException
 
-from coreason_adlc_api.middleware.proxy import InferenceProxyService
 from coreason_adlc_api.db_models import Secret
+from coreason_adlc_api.middleware.proxy import InferenceProxyService
 
 
 @pytest.fixture
@@ -113,11 +113,8 @@ async def test_proxy_circuit_breaker(
     # Get the specific breaker for 'openai' (default mock provider)
     breaker = proxy_service.get_circuit_breaker("openai")
 
-    # Mocking aiobreaker internals or state isn't trivial via method calls if open() doesn't exist.
-    # However, we can patch the breaker object or its state storage.
-    # Or simpler: Patch call_async to raise CircuitBreakerError immediately to simulate OPEN state.
-
-    with mock.patch.object(breaker, 'call_async', side_effect=CircuitBreakerError("Circuit Open")):
+    # Mock call to simulate failure/open circuit
+    with mock.patch.object(breaker, 'call', side_effect=CircuitBreakerError("Circuit Open")):
         with pytest.raises(HTTPException) as exc:
             await proxy_service.execute_inference([], "gpt-4", "proj-1")
 

@@ -9,12 +9,12 @@
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
 import time
-from typing import Callable, Any
+from typing import Any, Callable
 
 import httpx
 import jwt
 import keyring
-from tenacity import retry, stop_after_delay, wait_fixed, retry_if_exception, RetryError
+from tenacity import RetryError, retry, retry_if_exception, stop_after_delay
 
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
 
@@ -24,6 +24,7 @@ USERNAME = "default_user"
 
 class AuthorizationPendingError(Exception):
     pass
+
 
 class SlowDownError(Exception):
     pass
@@ -81,14 +82,14 @@ class ClientAuthManager:
             stop=stop_after_delay(expires_in),
             wait=wait_dynamic,
             retry=retry_if_exception(is_polling_error),
-            reraise=True
+            reraise=True,
         )
         def _poll() -> str:
             try:
                 poll_resp = httpx.post(token_url, json={"device_code": dc_data.device_code})
 
                 if poll_resp.status_code == 200:
-                    return poll_resp.json() # Return dict
+                    return poll_resp.json()  # Return dict
 
                 if poll_resp.status_code == 400:
                     error_detail = poll_resp.json().get("detail")
@@ -125,7 +126,7 @@ class ClientAuthManager:
         except RetryError:
             raise RuntimeError("Authentication timed out.")
         except Exception as e:
-            raise RuntimeError(f"Authentication failed: {e}")
+            raise RuntimeError(f"Authentication failed: {e}") from e
 
     def get_token(self) -> str | None:
         """

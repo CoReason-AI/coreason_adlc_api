@@ -8,235 +8,124 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-from uuid import UUID
+import logging
+from typing import List, Dict, Any, Generator
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import select, col
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
-from coreason_adlc_api.db import async_session_factory
-from coreason_adlc_api.db_models import GroupMapping
-from coreason_adlc_api.middleware.budget import check_budget_status
-from coreason_adlc_api.middleware.pii import scrub_pii_recursive
-from coreason_adlc_api.workbench.locking import refresh_lock
+from coreason_adlc_api.auth.identity import get_current_user, UserIdentity
 from coreason_adlc_api.workbench.schemas import (
-    AgentArtifact,
-    ApprovalStatus,
-    DraftCreate,
-    DraftResponse,
-    DraftUpdate,
-    PublishRequest,
-    ValidationResponse,
+    DraftCreate, DraftResponse, DraftUpdate, ArtifactResponse, PublishRequest,
+    ReviewRequest
 )
-from coreason_adlc_api.workbench.service import (
-    assemble_artifact,
-    create_draft,
-    get_draft_by_id,
-    get_drafts,
-    publish_artifact,
-    transition_draft_status,
-    update_draft,
-)
+from coreason_adlc_api.workbench.service import WorkbenchService
+from coreason_adlc_api.workbench.locking import DraftLockManager
+from coreason_adlc_api.db import get_db
 
-router = APIRouter(prefix="/workbench", tags=["Workbench"])
+logger = logging.getLogger(__name__)
 
+router = APIRouter(prefix="/workbench", tags=["workbench"])
 
-async def _verify_project_access(identity: UserIdentity, auc_id: str) -> None:
-    """
-    Verifies that the user has access to the given project (AUC ID).
-    """
-    allowed_projects = await map_groups_to_projects(identity.groups)
-    if auc_id not in allowed_projects:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User is not authorized to access project {auc_id}",
-        )
+async def get_service(
+    session: AsyncSession = Depends(get_db),
+    user: UserIdentity = Depends(get_current_user)
+) -> WorkbenchService:
+    return WorkbenchService(session, user)
+
+async def get_lock_manager(
+    session: AsyncSession = Depends(get_db),
+    user: UserIdentity = Depends(get_current_user)
+) -> DraftLockManager:
+    return DraftLockManager(session, user)
 
 
-@router.get("/drafts", response_model=list[DraftResponse])
-async def list_drafts(auc_id: str, identity: UserIdentity = Depends(parse_and_validate_token)) -> list[DraftResponse]:
-    """
-    Returns list of drafts filterable by auc_id.
-    """
-    # Authorization: User must have access to auc_id
-    await _verify_project_access(identity, auc_id)
-    result = await get_drafts(auc_id)
-    return result
-
-
-@router.post("/drafts", response_model=DraftResponse, status_code=status.HTTP_201_CREATED)
-async def create_new_draft(
-    draft: DraftCreate, identity: UserIdentity = Depends(parse_and_validate_token)
+@router.post("/drafts", response_model=DraftResponse, status_code=201)
+async def create_draft(
+    draft_in: DraftCreate,
+    service: WorkbenchService = Depends(get_service)
 ) -> DraftResponse:
     """
-    Creates a new agent draft.
+    Creates a new draft for a project.
     """
-    await _verify_project_access(identity, draft.auc_id)
-    return await create_draft(draft, identity.oid)
-
-
-async def _get_user_roles(group_oids: list[UUID]) -> list[str]:
-    # TODO: Refactor into identity module
-    async with async_session_factory() as session:
-        statement = select(GroupMapping.role_name).where(col(GroupMapping.sso_group_oid).in_(group_oids))
-        results = await session.exec(statement)
-        return list(results.all())
+    return await service.create_draft(draft_in)
 
 
 @router.get("/drafts/{draft_id}", response_model=DraftResponse)
-async def get_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
+async def get_draft(
+    draft_id: str,
+    service: WorkbenchService = Depends(get_service)
+) -> DraftResponse:
     """
-    Returns draft content and acquires lock.
+    Retrieves a draft by ID.
     """
-    # Fetch Roles (Mocked logic or via group mapping if roles were stored there)
-    roles = await _get_user_roles(identity.groups)
-
-    draft = await get_draft_by_id(draft_id, identity.oid, roles)
-    if not draft:
-        raise HTTPException(status_code=404, detail="Draft not found")
-
-    # Verify Access to the draft's project
-    await _verify_project_access(identity, draft.auc_id)
-
-    return draft
+    return await service.get_draft(draft_id)
 
 
 @router.put("/drafts/{draft_id}", response_model=DraftResponse)
-async def update_existing_draft(
-    draft_id: UUID, update: DraftUpdate, identity: UserIdentity = Depends(parse_and_validate_token)
+async def update_draft(
+    draft_id: str,
+    draft_in: DraftUpdate,
+    service: WorkbenchService = Depends(get_service),
+    lock_manager: DraftLockManager = Depends(get_lock_manager)
 ) -> DraftResponse:
     """
-    Updates draft content.
-    (Requires active Lock)
+    Updates a draft. Must have a valid lock or acquire one implicitly if allowed.
     """
-    # Check access by fetching the draft briefly
-    # Note: Optimization could be done here, but robustness first.
-    current_draft = await get_draft_by_id(draft_id, identity.oid, [])
-    if not current_draft:
-        raise HTTPException(status_code=404, detail="Draft not found")
+    # Ensure lock is held or acquire it
+    # For now, let's assume service handles logical checks, but locking is explicit in API usually.
+    # Actually, simplistic: Acquire lock -> Update -> Release/Keep?
+    # Better: service.update_draft handles check.
 
-    await _verify_project_access(identity, current_draft.auc_id)
-
-    return await update_draft(draft_id, update, identity.oid)
+    # We can rely on service to check if user has lock.
+    return await service.update_draft(draft_id, draft_in)
 
 
-@router.post("/drafts/{draft_id}/lock")
-async def heartbeat_lock(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> dict[str, bool]:
+@router.post("/drafts/{draft_id}/lock", response_model=bool)
+async def lock_draft(
+    draft_id: str,
+    force: bool = False,
+    lock_manager: DraftLockManager = Depends(get_lock_manager)
+) -> bool:
     """
-    Refreshes the lock expiry.
+    Acquires an exclusive lock on the draft for editing.
     """
-    await refresh_lock(draft_id, identity.oid)
-    return {"success": True}
+    return await lock_manager.acquire_lock(draft_id, force=force)
 
 
-@router.post("/validate", response_model=ValidationResponse)
-async def validate_draft(
-    draft: DraftCreate, identity: UserIdentity = Depends(parse_and_validate_token)
-) -> ValidationResponse:
+@router.delete("/drafts/{draft_id}/lock", response_model=bool)
+async def unlock_draft(
+    draft_id: str,
+    lock_manager: DraftLockManager = Depends(get_lock_manager)
+) -> bool:
     """
-    Stateless validation of a draft.
-    Checks for:
-    1. Budget limits (read-only)
-    2. PII presence (recursive)
-    Does NOT save to DB.
+    Releases the lock on the draft.
     """
-    issues = []
-
-    # 1. Budget Check
-    if not await check_budget_status(identity.oid):
-        issues.append("Budget Limit Reached")
-
-    # 2. PII Check
-    try:
-        scrubbed_content = await scrub_pii_recursive(draft.oas_content)
-        # Deep comparison
-        if scrubbed_content != draft.oas_content:
-            issues.append("PII Detected")
-    except Exception:
-        # Fail-closed if PII check fails (e.g. Analyzer missing handled in middleware, but other errors)
-        issues.append("PII Check Failed")
-
-    return ValidationResponse(is_valid=(len(issues) == 0), issues=issues)
+    return await lock_manager.release_lock(draft_id)
 
 
-# --- Approval Workflow Endpoints ---
-
-
-async def _get_draft_and_verify_access(draft_id: UUID, identity: UserIdentity) -> DraftResponse:
-    draft = await get_draft_by_id(draft_id, identity.oid, [])
-    if not draft:
-        raise HTTPException(status_code=404, detail="Draft not found")
-    await _verify_project_access(identity, draft.auc_id)
-    return draft
-
-
-@router.post("/drafts/{draft_id}/submit", response_model=DraftResponse)
-async def submit_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
+@router.post("/drafts/{draft_id}/publish", response_model=ArtifactResponse)
+async def publish_draft(
+    draft_id: str,
+    publish_req: PublishRequest,
+    service: WorkbenchService = Depends(get_service)
+) -> ArtifactResponse:
     """
-    Submits a draft for approval.
-    Transitions: DRAFT/REJECTED -> PENDING
+    Publishes a draft as an immutable artifact.
     """
-    await _get_draft_and_verify_access(draft_id, identity)
-    return await transition_draft_status(draft_id, identity.oid, ApprovalStatus.PENDING)
+    return await service.publish_artifact(draft_id, publish_req)
 
 
-@router.post("/drafts/{draft_id}/approve", response_model=DraftResponse)
-async def approve_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
+@router.post("/drafts/{draft_id}/review", response_model=DraftResponse)
+async def review_draft(
+    draft_id: str,
+    review_req: ReviewRequest,
+    service: WorkbenchService = Depends(get_service)
+) -> DraftResponse:
     """
-    Approves a pending draft.
-    Transitions: PENDING -> APPROVED
-    Requires: MANAGER role
+    Submits a review (Approve/Reject) for a draft.
     """
-    roles = await _get_user_roles(identity.groups)
-    if "MANAGER" not in roles:
-        raise HTTPException(status_code=403, detail="Only managers can approve drafts")
-
-    await _get_draft_and_verify_access(draft_id, identity)
-    return await transition_draft_status(draft_id, identity.oid, ApprovalStatus.APPROVED)
-
-
-@router.post("/drafts/{draft_id}/reject", response_model=DraftResponse)
-async def reject_draft(draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)) -> DraftResponse:
-    """
-    Rejects a pending draft.
-    Transitions: PENDING -> REJECTED
-    Requires: MANAGER role
-    """
-    roles = await _get_user_roles(identity.groups)
-    if "MANAGER" not in roles:
-        raise HTTPException(status_code=403, detail="Only managers can reject drafts")
-
-    await _get_draft_and_verify_access(draft_id, identity)
-    return await transition_draft_status(draft_id, identity.oid, ApprovalStatus.REJECTED)
-
-
-# --- Artifact Assembly & Publication Endpoints ---
-
-
-@router.get("/drafts/{draft_id}/assemble", response_model=AgentArtifact)
-async def get_artifact_assembly(
-    draft_id: UUID, identity: UserIdentity = Depends(parse_and_validate_token)
-) -> AgentArtifact:
-    """
-    Returns the assembled AgentArtifact for an APPROVED draft.
-    """
-    await _get_draft_and_verify_access(draft_id, identity)
-    try:
-        return await assemble_artifact(draft_id, identity.oid)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-@router.post("/drafts/{draft_id}/publish", response_model=dict[str, str])
-async def publish_agent_artifact(
-    draft_id: UUID, request: PublishRequest, identity: UserIdentity = Depends(parse_and_validate_token)
-) -> dict[str, str]:
-    """
-    Publishes the signed artifact.
-    """
-    await _get_draft_and_verify_access(draft_id, identity)
-    try:
-        url = await publish_artifact(draft_id, request.signature, identity.oid)
-        return {"url": url}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    if review_req.decision == "APPROVE":
+        return await service.approve_draft(draft_id)
+    else:
+        return await service.reject_draft(draft_id, review_req.comment)

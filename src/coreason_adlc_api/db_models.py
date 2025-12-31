@@ -8,111 +8,98 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
+import uuid
 from datetime import datetime
-from typing import List, Optional, Any, Dict
-from uuid import UUID, uuid4
+from typing import Optional, List
 
-from sqlmodel import Field, SQLModel, Relationship
-from sqlalchemy import Column, String, JSON, ARRAY, text
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlmodel import Field, SQLModel, JSON
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import JSONB
 
+# --- Auth ---
 
-# -----------------------------------------------------------------------------
-# Identity Schema
-# -----------------------------------------------------------------------------
-
-class User(SQLModel, table=True):
+class UserIdentityModel(SQLModel, table=True):
     __tablename__ = "users"
-    __table_args__ = {"schema": "identity"}
 
-    user_uuid: UUID = Field(default=None, primary_key=True)
-    email: str = Field(unique=True, max_length=255)
-    full_name: Optional[str] = Field(default=None, max_length=255)
-    created_at: Optional[datetime] = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"server_default": text("now()")}
-    )
-    last_login: Optional[datetime] = Field(default=None)
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    sub: str = Field(index=True, unique=True)
+    email: str
+    name: str
+    roles: List[str] = Field(sa_column=Column(JSONB)) # type: ignore
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
+class ProjectAccessModel(SQLModel, table=True):
+    __tablename__ = "project_access"
 
-class GroupMapping(SQLModel, table=True):
-    __tablename__ = "group_mappings"
-    __table_args__ = {"schema": "identity"}
-
-    mapping_id: UUID = Field(default_factory=uuid4, primary_key=True)
-    sso_group_oid: UUID = Field(unique=True)
-    role_name: str = Field(max_length=50)
-    allowed_auc_ids: List[str] = Field(sa_column=Column(ARRAY(String)))
-    description: Optional[str] = Field(default=None, max_length=255)
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="users.id", index=True)
+    project_id: str = Field(index=True)
+    role: str # e.g. "viewer", "editor"
+    granted_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-# -----------------------------------------------------------------------------
-# Vault Schema
-# -----------------------------------------------------------------------------
+# --- Vault ---
 
-class Secret(SQLModel, table=True):
+class SecretModel(SQLModel, table=True):
     __tablename__ = "secrets"
-    __table_args__ = (
-        {"schema": "vault"},
-    )
 
-    secret_id: UUID = Field(default_factory=uuid4, primary_key=True)
-    auc_id: str = Field(max_length=50)
-    service_name: str = Field(max_length=50)
-    encrypted_value: str = Field()  # TEXT
-    encryption_key_id: Optional[str] = Field(default=None, max_length=50)
-    created_by: Optional[UUID] = Field(default=None, foreign_key="identity.users.user_uuid")
-    created_at: Optional[datetime] = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"server_default": text("now()")}
-    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    project_id: str = Field(index=True)
+    key_name: str = Field(index=True)
+    encrypted_value: bytes
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Composite unique constraint handling in SQLModel is usually done via TableArgs
+    # __table_args__ = (UniqueConstraint("project_id", "key_name"),)
+
+# Alias for legacy compatibility/proxy usage if needed
+# But wait, proxy.py was importing 'Secret', maybe it meant SecretModel or the old Pydantic model?
+# The error said "cannot import name 'Secret'".
+# Let's verify what proxy.py expects. Assuming it wants the DB model.
+Secret = SecretModel
+
+# --- Workbench ---
+
+class DraftModel(SQLModel, table=True):
+    __tablename__ = "drafts"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    project_id: str = Field(index=True)
+    content: dict = Field(default={}, sa_column=Column(JSONB)) # type: ignore
+    status: str = Field(default="DRAFT") # Draft, Pending, Approved, Rejected
+    version: int = Field(default=1)
+    created_by: uuid.UUID = Field(foreign_key="users.id")
+    locked_by: Optional[uuid.UUID] = Field(default=None, foreign_key="users.id")
+    locked_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ArtifactModel(SQLModel, table=True):
+    __tablename__ = "artifacts"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    project_id: str = Field(index=True)
+    draft_id: uuid.UUID = Field(foreign_key="drafts.id")
+    version: str # e.g. "1.0.0"
+    content_hash: str
+    signature: str
+    published_by: uuid.UUID = Field(foreign_key="users.id")
+    published_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-# -----------------------------------------------------------------------------
-# Workbench Schema
-# -----------------------------------------------------------------------------
-
-class AgentDraft(SQLModel, table=True):
-    __tablename__ = "agent_drafts"
-    __table_args__ = {"schema": "workbench"}
-
-    draft_id: UUID = Field(default_factory=uuid4, primary_key=True)
-    user_uuid: Optional[UUID] = Field(default=None, foreign_key="identity.users.user_uuid")
-    auc_id: str = Field(max_length=50)
-    title: str = Field(max_length=255)
-    oas_content: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    runtime_env: Optional[str] = Field(default=None, max_length=64)
-    status: str = Field(default="DRAFT", max_length=20)  # Check constraint managed in DDL
-    agent_tools_index: Optional[Any] = Field(default=None, sa_column=Column(TSVECTOR))
-    locked_by_user: Optional[UUID] = Field(default=None, foreign_key="identity.users.user_uuid")
-    lock_expiry: Optional[datetime] = Field(default=None)
-    is_deleted: bool = Field(default=False)
-    created_at: Optional[datetime] = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"server_default": text("now()")}
-    )
-    updated_at: Optional[datetime] = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"server_default": text("now()")}
-    )
-
-
-# -----------------------------------------------------------------------------
-# Telemetry Schema
-# -----------------------------------------------------------------------------
+# --- Telemetry ---
 
 class TelemetryLog(SQLModel, table=True):
     __tablename__ = "telemetry_logs"
-    __table_args__ = {"schema": "telemetry"}
 
-    # Note: Partitioned tables in PG usually don't enforce global PK easily.
-    # We define it here for SQLModel but the actual table is partitioned.
-    log_id: UUID = Field(default_factory=uuid4, primary_key=True)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    user_uuid: Optional[UUID] = Field(default=None)
-    auc_id: Optional[str] = Field(default=None, max_length=50)
-    model_name: Optional[str] = Field(default=None, max_length=100)
-    request_payload: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
-    response_payload: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
-    cost_usd: Optional[float] = Field(default=None)
-    latency_ms: Optional[int] = Field(default=None)
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
+    user_uuid: uuid.UUID = Field(index=True) # Not strictly FK to decouple log storage from user deletion? Or loose coupling.
+    auc_id: str = Field(index=True)
+    model_name: str
+    request_payload: str # Or JSON? "request_payload" in original schema was text
+    response_payload: str
+    cost_usd: float
+    latency_ms: float

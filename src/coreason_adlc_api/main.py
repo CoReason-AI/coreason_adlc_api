@@ -8,58 +8,45 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import sys
+import uvicorn
+import typer
 import asyncio
 
-import uvicorn
-from loguru import logger
-from arq import run_worker
-
+from coreason_adlc_api.app import create_app
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.telemetry.arq_worker import WorkerSettings
 
+app_typer = typer.Typer()
 
-def start() -> None:
+@app_typer.command()
+def start(
+    host: str = typer.Option("0.0.0.0", help="Host to bind to"),
+    port: int = typer.Option(8000, help="Port to bind to"),
+    reload: bool = typer.Option(False, help="Enable auto-reload"),
+    workers: int = typer.Option(1, help="Number of worker processes"),
+):
     """
-    Entry point for the CLI command `coreason-api start`.
-    Runs the Uvicorn server.
+    Start the Coreason ADLC API server.
     """
-    logger.info(f"Initializing server on {settings.HOST}:{settings.PORT}")
     uvicorn.run(
         "coreason_adlc_api.app:app",
-        host=settings.HOST,
-        port=settings.PORT,
-        log_level=settings.LOG_LEVEL.lower(),
-        reload=settings.DEBUG,
+        host=host,
+        port=port,
+        reload=reload,
+        workers=workers,
+        log_level="info",
     )
 
-
-def worker() -> None:
+@app_typer.command()
+def worker():
     """
-    Entry point for the CLI command `coreason-api worker`.
-    Runs the ARQ worker.
+    Start the ARQ telemetry worker.
     """
-    logger.info("Initializing ARQ Worker...")
-    asyncio.run(run_worker(WorkerSettings))
+    from arq import run_worker
+    asyncio.run(run_worker(WorkerSettings)) # type: ignore
 
+def main():
+    app_typer()
 
-def main() -> None:
-    """
-    Main entry point for console scripts.
-    Parses arguments.
-    """
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "start":
-            start()
-        elif sys.argv[1] == "worker":
-            worker()
-        else:
-            print("Usage: coreason-api [start|worker]")
-            sys.exit(1)
-    else:
-        print("Usage: coreason-api [start|worker]")
-        sys.exit(1)
-
-
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()

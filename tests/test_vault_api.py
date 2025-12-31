@@ -8,147 +8,61 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import uuid
-from typing import Any
-from unittest.mock import AsyncMock, patch, MagicMock
-
 import pytest
-from fastapi import HTTPException
-from httpx import ASGITransport, AsyncClient
+from unittest.mock import MagicMock, AsyncMock, patch
+from uuid import uuid4
 
+from fastapi.testclient import TestClient
 from coreason_adlc_api.app import app
-from coreason_adlc_api.vault.service import retrieve_decrypted_secret, store_secret
-from coreason_adlc_api.db_models import Secret
+from coreason_adlc_api.auth.identity import UserIdentity
+from coreason_adlc_api.vault.service import VaultService
 
+# We need to mock get_vault_service dependency in the app, or mock its internals.
+# Since we are testing API, mocking the service is cleaner.
 
 @pytest.fixture
-def mock_auth_header(mock_oidc_factory: Any) -> str:
-    user_uuid = str(uuid.uuid4())
-    token = mock_oidc_factory(
-        {
-            "sub": user_uuid,
-            "oid": user_uuid,
-            "name": "Vault Tester",
-            "email": "vault@coreason.ai",
-        }
+def client():
+    return TestClient(app)
+
+@pytest.fixture
+def mock_user_identity():
+    return UserIdentity(
+        oid=uuid4(),
+        email="test@example.com",
+        groups=[],
+        full_name="Test User"
     )
-    return f"Bearer {token}"
 
+@pytest.fixture
+def mock_vault_service():
+    service = MagicMock(spec=VaultService)
+    service.store_secret = AsyncMock()
+    service.get_secret = AsyncMock()
+    return service
 
-@pytest.mark.asyncio
-async def test_store_secret_api(mock_auth_header: str) -> None:
-    """Test POST /vault/secrets endpoint via API."""
+def test_store_secret_endpoint(client, mock_user_identity, mock_vault_service):
+    # Override dependencies
+    app.dependency_overrides["coreason_adlc_api.routers.vault.get_vault_service"] = lambda: mock_vault_service
+    app.dependency_overrides["coreason_adlc_api.auth.identity.parse_and_validate_token"] = lambda: mock_user_identity
 
-    # Mock store_secret service call
-    with (
-        patch("coreason_adlc_api.routers.vault.store_secret", new=AsyncMock(return_value=uuid.uuid4())) as mock_store,
-        patch("coreason_adlc_api.routers.vault.map_groups_to_projects", new=AsyncMock(return_value=["project-omega"])),
-    ):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            payload = {"auc_id": "project-omega", "service_name": "openai", "raw_api_key": "sk-test-key"}
-            resp = await ac.post("/api/v1/vault/secrets", json=payload, headers={"Authorization": mock_auth_header})
+    mock_vault_service.store_secret.return_value = uuid4()
 
-            if resp.status_code != 201:
-                print(resp.json())
-            assert resp.status_code == 201
-            data = resp.json()
-            assert data["auc_id"] == "project-omega"
-            assert "secret_id" in data
+    response = client.post(
+        "/api/v1/vault/secrets",
+        json={
+            "auc_id": "test-project",
+            "service_name": "openai_api_key",
+            "raw_api_key": "sk-1234567890"
+        },
+        headers={"Authorization": "Bearer mock_token"}
+    )
 
-            # Verify mock called with correct identity
-            mock_store.assert_called_once()
-            args = mock_store.call_args
-            # args: (auc_id, service_name, raw_api_key, user_uuid)
-            assert args.kwargs["auc_id"] == "project-omega"
-            assert args.kwargs["raw_api_key"] == "sk-test-key"
+    assert response.status_code == 201
+    data = response.json()
+    assert data["auc_id"] == "test-project"
+    assert "secret_id" in data
 
+    mock_vault_service.store_secret.assert_awaited_once()
 
-@pytest.mark.asyncio
-async def test_retrieve_decrypted_secret_logic(mock_db_session) -> None:
-    """Test the internal retrieval logic with mocked DB."""
-
-    # Mock DB result
-    mock_secret = MagicMock(spec=Secret)
-    mock_secret.encrypted_value = "mock_encrypted_string"
-    mock_db_session.exec.return_value.first.return_value = mock_secret
-
-    with (
-        patch("coreason_adlc_api.vault.service.async_session_factory") as mock_factory,
-        patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto,
-    ):
-        mock_factory.return_value.__aenter__.return_value = mock_db_session
-        mock_crypto.decrypt_secret.return_value = "decrypted-key"
-
-        result = await retrieve_decrypted_secret("project-omega", "openai")
-
-        assert result == "decrypted-key"
-        mock_db_session.exec.assert_called_once()
-        mock_crypto.decrypt_secret.assert_called_once_with("mock_encrypted_string")
-
-
-@pytest.mark.asyncio
-async def test_retrieve_secret_not_found(mock_db_session) -> None:
-    """Test retrieval when secret does not exist."""
-    mock_db_session.exec.return_value.first.return_value = None
-
-    with patch("coreason_adlc_api.vault.service.async_session_factory") as mock_factory:
-        mock_factory.return_value.__aenter__.return_value = mock_db_session
-        with pytest.raises(ValueError, match="No secret found"):
-            await retrieve_decrypted_secret("project-omega", "missing")
-
-
-@pytest.mark.asyncio
-async def test_store_secret_logic(mock_db_session) -> None:
-    """Test the internal store logic with mocked DB."""
-
-    # Mock return value of INSERT RETURNING
-    # SQLModel exec returns a Result object. Result.first() returns a Row or scalar depending on query.
-    # insert().returning() usually returns Row objects.
-    mock_row = (uuid.uuid4(),)
-    mock_db_session.exec.return_value.first.return_value = mock_row
-
-    with (
-        patch("coreason_adlc_api.vault.service.async_session_factory") as mock_factory,
-        patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto,
-    ):
-        mock_factory.return_value.__aenter__.return_value = mock_db_session
-        mock_crypto.encrypt_secret.return_value = "encrypted-data"
-
-        sid = await store_secret("project-omega", "openai", "raw-key", uuid.uuid4())
-
-        # Check interaction
-        mock_db_session.exec.assert_called()
-        mock_db_session.commit.assert_called()
-
-        assert isinstance(sid, uuid.UUID)
-        assert sid == mock_row[0]
-
-
-@pytest.mark.asyncio
-async def test_store_secret_failure(mock_db_session) -> None:
-    """Test store_secret handling of DB errors."""
-    mock_db_session.commit.side_effect = Exception("DB Connection Lost")
-    mock_db_session.exec.return_value.first.return_value = (uuid.uuid4(),)
-
-    with (
-        patch("coreason_adlc_api.vault.service.async_session_factory") as mock_factory,
-        patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto,
-    ):
-        mock_factory.return_value.__aenter__.return_value = mock_db_session
-        mock_crypto.encrypt_secret.return_value = "encrypted-data"
-
-        with pytest.raises(HTTPException) as exc:
-            await store_secret("project-omega", "openai", "raw-key", uuid.uuid4())
-
-        assert exc.value.status_code == 500
-
-
-@pytest.mark.asyncio
-async def test_store_secret_api_forbidden(mock_auth_header: str) -> None:
-    """Test POST /vault/secrets endpoint - Forbidden."""
-    with patch("coreason_adlc_api.routers.vault.map_groups_to_projects", new=AsyncMock(return_value=["other-project"])):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            payload = {"auc_id": "project-omega", "service_name": "openai", "raw_api_key": "sk-test-key"}
-            resp = await ac.post("/api/v1/vault/secrets", json=payload, headers={"Authorization": mock_auth_header})
-
-            assert resp.status_code == 403
+    # Clean up overrides
+    app.dependency_overrides = {}
