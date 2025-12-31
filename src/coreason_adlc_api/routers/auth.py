@@ -12,11 +12,13 @@ import uuid
 
 import httpx
 import jwt
-from fastapi import APIRouter, Body, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from coreason_adlc_api.auth.identity import UserIdentity, get_oidc_config, upsert_user
 from coreason_adlc_api.auth.schemas import DeviceCodeResponse, TokenResponse
 from coreason_adlc_api.config import settings
+from coreason_adlc_api.dependencies import get_db
 from coreason_adlc_api.utils import get_http_client
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -60,7 +62,10 @@ async def initiate_device_code_flow() -> DeviceCodeResponse:
 
 
 @router.post("/token", response_model=TokenResponse)
-async def poll_for_token(device_code: str = Body(..., embed=True)) -> TokenResponse:
+async def poll_for_token(
+    device_code: str = Body(..., embed=True),
+    session: AsyncSession = Depends(get_db),
+) -> TokenResponse:
     """
     Polls for Session Token (JWT) by proxying to the upstream IdP.
     """
@@ -122,7 +127,7 @@ async def poll_for_token(device_code: str = Body(..., embed=True)) -> TokenRespo
                         full_name=name,
                         groups=[],  # Groups handled via graph or claims later
                     )
-                    await upsert_user(identity)
+                    await upsert_user(session, identity)
             except Exception:
                 # Logging handled in upsert_user or ignored if token non-decodable
                 pass

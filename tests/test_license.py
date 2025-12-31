@@ -21,8 +21,6 @@ async def test_lifespan_community_mode() -> None:
     app = create_app()
 
     with (
-        patch("coreason_adlc_api.app.init_db", new=AsyncMock()),
-        patch("coreason_adlc_api.app.close_db", new=AsyncMock()),
         patch("coreason_adlc_api.app.telemetry_worker", new=AsyncMock()),
         patch("coreason_adlc_api.app.logger") as mock_logger,
         patch("coreason_adlc_api.app.settings.ENTERPRISE_LICENSE_KEY", None),
@@ -38,8 +36,6 @@ async def test_lifespan_enterprise_mode() -> None:
     app = create_app()
 
     with (
-        patch("coreason_adlc_api.app.init_db", new=AsyncMock()),
-        patch("coreason_adlc_api.app.close_db", new=AsyncMock()),
         patch("coreason_adlc_api.app.telemetry_worker", new=AsyncMock()),
         patch("coreason_adlc_api.app.logger") as mock_logger,
         patch("coreason_adlc_api.app.settings.ENTERPRISE_LICENSE_KEY", "valid-key"),

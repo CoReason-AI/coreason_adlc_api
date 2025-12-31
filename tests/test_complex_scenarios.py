@@ -12,54 +12,22 @@ import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Generator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.engine import Result
 
 from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock
 from coreason_adlc_api.workbench.schemas import DraftCreate, DraftUpdate
 from coreason_adlc_api.workbench.service import create_draft, update_draft
 
 
-# --- Fixtures ---
-@pytest.fixture
-def mock_pool() -> Generator[MagicMock, None, None]:
-    pool = MagicMock(spec=["acquire", "fetchrow", "execute"])
-
-    # Setup connection context manager
-    conn = MagicMock()
-    conn.fetchrow = AsyncMock()
-    conn.execute = AsyncMock()
-
-    conn_cm = MagicMock()
-    conn_cm.__aenter__ = AsyncMock(return_value=conn)
-    conn_cm.__aexit__ = AsyncMock(return_value=None)
-    pool.acquire.return_value = conn_cm
-
-    txn_cm = MagicMock()
-    txn_cm.__aenter__ = AsyncMock(return_value=None)
-    txn_cm.__aexit__ = AsyncMock(return_value=None)
-    conn.transaction.return_value = txn_cm
-
-    # Configure pool methods
-    pool.fetchrow = AsyncMock()
-    pool.execute = AsyncMock()
-
-    # Patch globally and locally
-    with (
-        patch("coreason_adlc_api.db.get_pool", return_value=pool),
-        patch("coreason_adlc_api.workbench.locking.get_pool", return_value=pool),
-        patch("coreason_adlc_api.workbench.service.get_pool", return_value=pool),
-    ):
-        yield pool
-
-
 # --- Complex Tests ---
 
 
 @pytest.mark.asyncio
-async def test_race_condition_lock_acquisition(mock_pool: MagicMock) -> None:
+async def test_race_condition_lock_acquisition(mock_db_session: AsyncMock) -> None:
     """
     Simulate two users (Alice and Bob) trying to lock the same draft simultaneously.
     Only one should succeed.
@@ -68,41 +36,42 @@ async def test_race_condition_lock_acquisition(mock_pool: MagicMock) -> None:
     alice_id = uuid.uuid4()
     bob_id = uuid.uuid4()
 
-    mock_conn = mock_pool.acquire.return_value.__aenter__.return_value
-
     # State tracking to simulate DB race
-    # We use a side_effect to return "Not Locked" first, then "Locked by Alice" for the second call?
-    # Or purely rely on the fact that `SELECT FOR UPDATE` (mocked transaction) serializes them in real DB.
-    # In Mock world, we simulate serial execution order.
-
-    # Scenario: Alice calls acquire -> Mock returns unlocked -> Alice updates to Locked.
-    # Bob calls acquire -> Mock returns Locked -> Bob gets 423.
-
-    # We define a stateful side effect for fetchrow
     lock_state = {"locked_by": None, "expiry": None}
 
-    async def fetchrow_side_effect(query: str, *args: object) -> dict[str, object] | None:
+    def create_result(row):
+        mock_res = MagicMock(spec=Result)
+        mock_res.fetchone.return_value = row
+        return mock_res
+
+    async def execute_side_effect(stmt, params=None) -> MagicMock:
+        query = str(stmt)
         if "SELECT locked_by_user" in query:
-            # Return current state
-            return {"locked_by_user": lock_state["locked_by"], "lock_expiry": lock_state["expiry"]}
-        return None
+             # Return current state.
+             # workbench/locking.py expects row[0], row[1]
+             return create_result((lock_state["locked_by"], lock_state["expiry"]))
 
-    async def execute_side_effect(query: str, *args: object) -> None:
-        if "UPDATE workbench.agent_drafts SET locked_by_user" in query:
-            # args: (user_uuid, new_expiry, draft_id)
-            lock_state["locked_by"] = args[0]  # type: ignore
-            lock_state["expiry"] = args[1]  # type: ignore
+        if "UPDATE workbench.agent_drafts" in query:
+            # params: {"user_uuid": ..., "new_expiry": ..., "draft_id": ...}
+            if params and "user_uuid" in params:
+                lock_state["locked_by"] = params["user_uuid"]
+                lock_state["expiry"] = params["new_expiry"]
+            return create_result(None) # UPDATE returns nothing relevant usually unless RETURNING
 
-    mock_conn.fetchrow.side_effect = fetchrow_side_effect
-    mock_conn.execute.side_effect = execute_side_effect
+        return create_result(None)
+
+    mock_db_session.execute.side_effect = execute_side_effect
 
     # Run concurrent tasks
-    # In a real asyncio loop, one will run to await point, then other might run.
-    # `acquire_draft_lock` awaits `pool.acquire`, then `conn.transaction`, then `fetchrow`.
+    # Since we are mocking session, we can't easily simulate two different sessions unless we do more complex setup.
+    # But `acquire_draft_lock` takes a session. We can pass the same mock session or different ones.
+    # Let's assume we pass the same mock session for simplicity of state sharing in test.
 
-    # We launch both. One will "win" (process first in our mocked serial logic)
+    # We launch both.
     results = await asyncio.gather(
-        acquire_draft_lock(draft_id, alice_id, []), acquire_draft_lock(draft_id, bob_id, []), return_exceptions=True
+        acquire_draft_lock(mock_db_session, draft_id, alice_id, []),
+        acquire_draft_lock(mock_db_session, draft_id, bob_id, []),
+        return_exceptions=True
     )
 
     # One should be AccessMode.EDIT, one should be HTTPException(423)
@@ -117,7 +86,7 @@ async def test_race_condition_lock_acquisition(mock_pool: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_zombie_lock_takeover(mock_pool: MagicMock) -> None:
+async def test_zombie_lock_takeover(mock_db_session: AsyncMock) -> None:
     """
     Scenario: User A locks draft. Time passes (expiry). User B tries to lock.
     User B should succeed because lock is expired ("Zombie Lock").
@@ -126,59 +95,78 @@ async def test_zombie_lock_takeover(mock_pool: MagicMock) -> None:
     user_a = uuid.uuid4()
     user_b = uuid.uuid4()
 
-    mock_conn = mock_pool.acquire.return_value.__aenter__.return_value
-
     # Initial state: Locked by A, but expired
     expired_time = datetime.now(timezone.utc) - timedelta(seconds=5)
-    mock_conn.fetchrow.return_value = {"locked_by_user": user_a, "lock_expiry": expired_time}
+
+    # Mock return for SELECT locked_by_user
+    mock_res = MagicMock(spec=Result)
+    mock_res.fetchone.return_value = (user_a, expired_time)
+    mock_db_session.execute.return_value = mock_res
 
     # User B attempts to acquire
-    mode = await acquire_draft_lock(draft_id, user_b, [])
+    mode = await acquire_draft_lock(mock_db_session, draft_id, user_b, [])
 
     # Should succeed
     assert mode == AccessMode.EDIT
 
     # Verify DB update was called to overwrite User A with User B
-    mock_conn.execute.assert_called_once()
-    args = mock_conn.execute.call_args[0]
-    assert args[1] == user_b  # New owner (arg1)
+    # Check calls to execute.
+    # 1. SELECT ...
+    # 2. UPDATE ...
+    assert mock_db_session.execute.call_count >= 2
+
+    # Check the update call params
+    update_call = [c for c in mock_db_session.execute.call_args_list if "UPDATE workbench.agent_drafts" in str(c[0][0])][0]
+    params = update_call[0][1] # Second arg is params dict
+    assert params["user_uuid"] == user_b
 
 
 @pytest.mark.asyncio
-async def test_update_on_deleted_draft(mock_pool: MagicMock) -> None:
+async def test_update_on_deleted_draft(mock_db_session: AsyncMock) -> None:
     """
     Scenario: User tries to update a draft that was soft-deleted by another process
     concurrently (between lock check and update).
     """
     draft_id = uuid.uuid4()
     user_id = uuid.uuid4()
-
-    # Setup: verify_lock succeeds
     future = datetime.now(timezone.utc) + timedelta(minutes=1)
-
-    # We mocked `get_pool` so `verify_lock_for_update` uses `mock_pool.fetchrow`.
-    # `update_draft` also uses `mock_pool.fetchrow`.
 
     # Side effect:
     # 1. First call (verify_lock): Returns valid lock row.
-    # 2. Second call (update): Returns None (simulating row deleted or not found by UPDATE WHERE clause).
+    # 2. Second call (check_status): Returns None (or status DRAFT) - let's assume it returns None if deleted.
+    #    Actually update_draft calls verify_lock then check_status then update.
+    #    If check_status returns row with status DRAFT it passes.
+    #    Then UPDATE returns nothing.
 
-    mock_pool.fetchrow.side_effect = [
-        {"locked_by_user": user_id, "lock_expiry": future},  # verify_lock
-        None,  # update returning * (not found)
-    ]
+    def execute_side_effect(stmt, params=None):
+        query = str(stmt)
+        mock_res = MagicMock(spec=Result)
+
+        if "SELECT locked_by_user" in query: # verify_lock
+            mock_res.fetchone.return_value = (user_id, future)
+        elif "SELECT status" in query: # check_status
+            mock_res.fetchone.return_value = ("DRAFT",)
+        elif "UPDATE workbench.agent_drafts" in query:
+             # update returning * (not found)
+             mock_res.mappings.return_value.fetchone.return_value = None
+        else:
+             mock_res.fetchone.return_value = None
+
+        return mock_res
+
+    mock_db_session.execute.side_effect = execute_side_effect
 
     update = DraftUpdate(title="Ghost Draft")
 
     with pytest.raises(HTTPException) as exc:
-        await update_draft(draft_id, update, user_id)
+        await update_draft(mock_db_session, draft_id, update, user_id)
 
     assert exc.value.status_code == 404
     assert "Draft not found" in exc.value.detail
 
 
 @pytest.mark.asyncio
-async def test_huge_payload_handling(mock_pool: MagicMock) -> None:
+async def test_huge_payload_handling(mock_db_session: AsyncMock) -> None:
     """
     Verify system handles 10MB JSON payload without crashing (memory/serialization check).
     """
@@ -187,7 +175,9 @@ async def test_huge_payload_handling(mock_pool: MagicMock) -> None:
 
     draft = DraftCreate(auc_id="big-data-project", title="Heavy Agent", oas_content=huge_json)
 
-    mock_pool.fetchrow.return_value = {
+    # Mock RETURNING *
+    mock_res = MagicMock(spec=Result)
+    row = {
         "draft_id": uuid.uuid4(),
         "user_uuid": user_id,
         "auc_id": "big-data-project",
@@ -197,13 +187,22 @@ async def test_huge_payload_handling(mock_pool: MagicMock) -> None:
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
+    # Mock mappings().fetchone() behavior
+    # We need to simulate the Result object properly
+    mock_res.fetchone.return_value = tuple(row.values())
+    mock_res.keys.return_value = list(row.keys())
+
+    # We need to ensure that when we access the row, it works for dict(zip(keys, row))
+    # In service.py we did `dict(result.keys().__class__(row, result.keys()))`
+
+    mock_db_session.execute.return_value = mock_res
 
     # Execute
-    res = await create_draft(draft, user_id)
+    res = await create_draft(mock_db_session, draft, user_id)
 
     assert res.title == "Heavy Agent"
-    # Ensure it was passed to DB
-    args = mock_pool.fetchrow.call_args[0]
-    # Check that json.dumps was called on huge payload (args[3] or similar)
-    # query is 1st arg. user_uuid 2nd. auc_id 3rd. title 4th. content 5th.
-    assert len(args[4]) >= 10 * 1024 * 1024  # Serialized string length
+
+    # Check that json.dumps was called on huge payload
+    call_args = mock_db_session.execute.call_args
+    params = call_args[0][1]
+    assert len(params["oas_content"]) >= 10 * 1024 * 1024

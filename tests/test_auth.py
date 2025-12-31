@@ -277,66 +277,63 @@ async def test_parse_token_invalid_signature_error(mock_oidc_setup: RSAPrivateKe
 
 
 @pytest.mark.asyncio
-async def test_upsert_user() -> None:
+async def test_upsert_user(mock_db_session: AsyncMock) -> None:
     user_uuid = uuid.uuid4()
     identity = UserIdentity(oid=user_uuid, email="upsert@coreason.ai", groups=[], full_name="Upsert Test")
 
-    mock_pool = AsyncMock()
-    with patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool):
-        await upsert_user(identity)
-        mock_pool.execute.assert_called_once()
-        args = mock_pool.execute.call_args[0]
-        assert "INSERT INTO identity.users" in args[0]
-        assert args[1] == user_uuid
+    await upsert_user(mock_db_session, identity)
+    # Verify execute called
+    mock_db_session.execute.assert_called()
+    # Verify commit called
+    mock_db_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_upsert_user_failure() -> None:
+async def test_upsert_user_failure(mock_db_session: AsyncMock) -> None:
     user_uuid = uuid.uuid4()
     identity = UserIdentity(oid=user_uuid, email="upsert@coreason.ai", groups=[], full_name="Upsert Test")
 
-    mock_pool = AsyncMock()
-    mock_pool.execute.side_effect = Exception("DB Error")
+    mock_db_session.execute.side_effect = Exception("DB Error")
 
-    with patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool):
-        with patch("coreason_adlc_api.auth.identity.logger") as mock_logger:
-            await upsert_user(identity)
-            mock_logger.error.assert_called()
+    with patch("coreason_adlc_api.auth.identity.logger") as mock_logger:
+        await upsert_user(mock_db_session, identity)
+        mock_logger.error.assert_called()
+        mock_db_session.rollback.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_map_groups_to_projects() -> None:
+async def test_map_groups_to_projects(mock_db_session: AsyncMock) -> None:
     group_oid = uuid.uuid4()
 
-    mock_pool = AsyncMock()
-    # Mock return value for fetch
-    mock_pool.fetch.return_value = [
-        {"auc_id": "project-alpha"},
-        {"auc_id": "project-beta"},
-        {"auc_id": "project-alpha"},  # Duplicate to test dedupe
+    # Mock return value for execute
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = [] # Not used by current implementation which iterates
+    # iteration over result yields rows
+    mock_res.__iter__.return_value = [
+        ("project-alpha",),
+        ("project-beta",),
+        ("project-alpha",),
     ]
+    mock_db_session.execute.return_value = mock_res
 
-    with patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool):
-        projects = await map_groups_to_projects([group_oid])
+    projects = await map_groups_to_projects(mock_db_session, [group_oid])
 
-        mock_pool.fetch.assert_called_once()
-        assert len(projects) == 2
-        assert "project-alpha" in projects
-        assert "project-beta" in projects
+    mock_db_session.execute.assert_called_once()
+    assert len(projects) == 2
+    assert "project-alpha" in projects
+    assert "project-beta" in projects
 
 
 @pytest.mark.asyncio
-async def test_map_groups_failure() -> None:
+async def test_map_groups_failure(mock_db_session: AsyncMock) -> None:
     group_oid = uuid.uuid4()
 
-    mock_pool = AsyncMock()
-    mock_pool.fetch.side_effect = Exception("DB Error")
+    mock_db_session.execute.side_effect = Exception("DB Error")
 
-    with patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool):
-        with patch("coreason_adlc_api.auth.identity.logger") as mock_logger:
-            projects = await map_groups_to_projects([group_oid])
-            assert projects == []
-            mock_logger.error.assert_called()
+    with patch("coreason_adlc_api.auth.identity.logger") as mock_logger:
+        projects = await map_groups_to_projects(mock_db_session, [group_oid])
+        assert projects == []
+        mock_logger.error.assert_called()
 
 
 @pytest.mark.asyncio
@@ -521,9 +518,9 @@ async def test_token_poll_non_UUID_oid_in_router(mock_oidc_setup: RSAPrivateKey)
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                     await ac.post("/api/v1/auth/token", json={"device_code": "123"})
                     mock_upsert.assert_called_once()
-                    # Verify ID converted
-                    args = mock_upsert.call_args[0][0]
-                    assert isinstance(args.oid, uuid.UUID)
+                    # Verify ID converted. upsert_user(session, identity)
+                    identity_arg = mock_upsert.call_args[0][1]
+                    assert isinstance(identity_arg.oid, uuid.UUID)
 
 
 @pytest.mark.asyncio

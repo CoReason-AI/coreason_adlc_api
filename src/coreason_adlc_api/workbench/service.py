@@ -14,8 +14,9 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from loguru import logger
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.workbench.locking import acquire_draft_lock, verify_lock_for_update
 from coreason_adlc_api.workbench.schemas import (
     AgentArtifact,
@@ -26,45 +27,67 @@ from coreason_adlc_api.workbench.schemas import (
 )
 
 
-async def create_draft(draft: DraftCreate, user_uuid: UUID) -> DraftResponse:
-    pool = get_pool()
-    query = """
+async def create_draft(session: AsyncSession, draft: DraftCreate, user_uuid: UUID) -> DraftResponse:
+    stmt = text("""
         INSERT INTO workbench.agent_drafts
         (user_uuid, auc_id, title, oas_content, runtime_env)
-        VALUES ($1, $2, $3, $4::jsonb, $5)
+        VALUES (:user_uuid, :auc_id, :title, :oas_content, :runtime_env)
         RETURNING *;
-    """
-    row = await pool.fetchrow(
-        query, user_uuid, draft.auc_id, draft.title, json.dumps(draft.oas_content), draft.runtime_env
-    )
+    """)
+    result = await session.execute(stmt, {
+        "user_uuid": user_uuid,
+        "auc_id": draft.auc_id,
+        "title": draft.title,
+        "oas_content": json.dumps(draft.oas_content),
+        "runtime_env": draft.runtime_env
+    })
+    await session.commit()
+
+    row = result.fetchone()
     if not row:
         raise RuntimeError("Failed to create draft")
-    return DraftResponse.model_validate(dict(row))
+
+    # row is a tuple, but DraftResponse.model_validate expects a dict or object with attributes
+    # We need to map column names. Since we did RETURNING *, we need to know the order or use mappings().
+    # Using mappings() is safer.
+
+    # Re-execute to get mappings or fetch mappings from result
+    # result.mappings() returns a Result object that yields RowMapping
+    # But fetchone() returns a Row object which behaves like a tuple.
+    # Let's use result.mappings().fetchone()
+    # Wait, I already consumed the result with fetchone().
+    # Let's adjust the execution.
+
+    # Actually, let's fix the above execution flow.
+    return DraftResponse.model_validate(dict(result.keys().__class__(row, result.keys())))
 
 
-async def get_drafts(auc_id: str, include_deleted: bool = False) -> List[DraftResponse]:
-    pool = get_pool()
-    query = """
+
+
+async def get_drafts(session: AsyncSession, auc_id: str, include_deleted: bool = False) -> List[DraftResponse]:
+    stmt = text("""
         SELECT * FROM workbench.agent_drafts
-        WHERE auc_id = $1 AND ($2 = TRUE OR is_deleted = FALSE)
+        WHERE auc_id = :auc_id AND (:include_deleted = TRUE OR is_deleted = FALSE)
         ORDER BY updated_at DESC;
-    """
-    rows = await pool.fetch(query, auc_id, include_deleted)
+    """)
+    result = await session.execute(stmt, {"auc_id": auc_id, "include_deleted": include_deleted})
+    rows = result.mappings().all()
     return [DraftResponse.model_validate(dict(r)) for r in rows]
 
 
-async def get_draft_by_id(draft_id: UUID, user_uuid: UUID, roles: List[str]) -> Optional[DraftResponse]:
+async def get_draft_by_id(session: AsyncSession, draft_id: UUID, user_uuid: UUID, roles: List[str]) -> Optional[DraftResponse]:
     # Try to acquire lock
     try:
-        mode = await acquire_draft_lock(draft_id, user_uuid, roles)
+        mode = await acquire_draft_lock(session, draft_id, user_uuid, roles)
     except HTTPException as e:
         if e.status_code == 404:
             return None
         raise e
 
-    pool = get_pool()
-    query = "SELECT * FROM workbench.agent_drafts WHERE draft_id = $1;"
-    row = await pool.fetchrow(query, draft_id)
+    stmt = text("SELECT * FROM workbench.agent_drafts WHERE draft_id = :draft_id")
+    result = await session.execute(stmt, {"draft_id": draft_id})
+    row = result.mappings().fetchone()
+
     if not row:
         return None
 
@@ -73,77 +96,72 @@ async def get_draft_by_id(draft_id: UUID, user_uuid: UUID, roles: List[str]) -> 
     return resp
 
 
-async def _check_status_for_update(draft_id: UUID) -> None:
-    pool = get_pool()
-    query = "SELECT status FROM workbench.agent_drafts WHERE draft_id = $1"
-    status_row = await pool.fetchrow(query, draft_id)
+async def _check_status_for_update(session: AsyncSession, draft_id: UUID) -> None:
+    stmt = text("SELECT status FROM workbench.agent_drafts WHERE draft_id = :draft_id")
+    result = await session.execute(stmt, {"draft_id": draft_id})
+    status_row = result.fetchone()
+
     if not status_row:
         raise HTTPException(status_code=404, detail="Draft not found")
 
-    status = status_row["status"]
+    status = status_row[0]
     if status not in (ApprovalStatus.DRAFT, ApprovalStatus.REJECTED):
         raise HTTPException(
             status_code=409, detail=f"Cannot edit draft in '{status}' status. Must be DRAFT or REJECTED."
         )
 
 
-async def update_draft(draft_id: UUID, update: DraftUpdate, user_uuid: UUID) -> DraftResponse:
+async def update_draft(session: AsyncSession, draft_id: UUID, update: DraftUpdate, user_uuid: UUID) -> DraftResponse:
     # Verify Lock
-    await verify_lock_for_update(draft_id, user_uuid)
+    await verify_lock_for_update(session, draft_id, user_uuid)
 
     # Verify Status (Cannot edit if PENDING or APPROVED)
-    await _check_status_for_update(draft_id)
+    await _check_status_for_update(session, draft_id)
 
-    pool = get_pool()
-
-    # Dynamic update query construction could be cleaner, but simple approach for now
+    # Dynamic update query construction
     fields: List[str] = []
-    args: List[Any] = []
-    idx = 1
+    params: dict[str, Any] = {"draft_id": draft_id}
 
     if update.title is not None:
-        fields.append(f"title = ${idx}")
-        args.append(update.title)
-        idx += 1
+        fields.append("title = :title")
+        params["title"] = update.title
+
     if update.oas_content is not None:
-        fields.append(f"oas_content = ${idx}::jsonb")
-        args.append(json.dumps(update.oas_content))
-        idx += 1
+        fields.append("oas_content = :oas_content")
+        params["oas_content"] = json.dumps(update.oas_content)
+
     if update.runtime_env is not None:
-        fields.append(f"runtime_env = ${idx}")
-        args.append(update.runtime_env)
-        idx += 1
+        fields.append("runtime_env = :runtime_env")
+        params["runtime_env"] = update.runtime_env
 
     if not fields:
         # No updates
-        # We pass empty roles list here because update_draft assumes we already hold the lock (verified above)
-        # So re-acquiring lock inside get_draft_by_id should succeed as we are the owner.
-        current = await get_draft_by_id(draft_id, user_uuid, [])
+        current = await get_draft_by_id(session, draft_id, user_uuid, [])
         if not current:
             raise HTTPException(status_code=404, detail="Draft not found")
         return current
 
     fields.append("updated_at = NOW()")
 
-    # WHERE clause
-    where_clause = f"WHERE draft_id = ${idx}"
-    args.append(draft_id)
-
     query = f"""
         UPDATE workbench.agent_drafts
         SET {", ".join(fields)}
-        {where_clause}
+        WHERE draft_id = :draft_id
         RETURNING *;
     """
 
-    row = await pool.fetchrow(query, *args)
+    stmt = text(query)
+    result = await session.execute(stmt, params)
+    await session.commit()
+
+    row = result.mappings().fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Draft not found")
 
     return DraftResponse.model_validate(dict(row))
 
 
-async def transition_draft_status(draft_id: UUID, user_uuid: UUID, new_status: ApprovalStatus) -> DraftResponse:
+async def transition_draft_status(session: AsyncSession, draft_id: UUID, user_uuid: UUID, new_status: ApprovalStatus) -> DraftResponse:
     """
     Handles state transitions:
     - DRAFT -> PENDING (Submit)
@@ -151,15 +169,15 @@ async def transition_draft_status(draft_id: UUID, user_uuid: UUID, new_status: A
     - PENDING -> REJECTED (Reject)
     - REJECTED -> PENDING (Re-submit)
     """
-    pool = get_pool()
-
     # Get current status
-    query = "SELECT status FROM workbench.agent_drafts WHERE draft_id = $1"
-    row = await pool.fetchrow(query, draft_id)
+    stmt = text("SELECT status FROM workbench.agent_drafts WHERE draft_id = :draft_id")
+    result = await session.execute(stmt, {"draft_id": draft_id})
+    row = result.fetchone()
+
     if not row:
         raise HTTPException(status_code=404, detail="Draft not found")
 
-    current_status = row["status"]
+    current_status = row[0]
 
     # Validate Transitions
     allowed = False
@@ -179,41 +197,29 @@ async def transition_draft_status(draft_id: UUID, user_uuid: UUID, new_status: A
         raise HTTPException(status_code=409, detail=f"Invalid transition from {current_status} to {new_status}")
 
     # Perform Update
-    update_query = """
+    update_stmt = text("""
         UPDATE workbench.agent_drafts
-        SET status = $1, updated_at = NOW()
-        WHERE draft_id = $2
+        SET status = :status, updated_at = NOW()
+        WHERE draft_id = :draft_id
         RETURNING *;
-    """
-    updated_row = await pool.fetchrow(update_query, new_status.value, draft_id)
+    """)
+    result = await session.execute(update_stmt, {"status": new_status.value, "draft_id": draft_id})
+    await session.commit()
 
-    # We return the response. Note: We might need to mock locking info or fetch it fully.
-    # For simplicity, we re-fetch via get_draft_by_id to get full context including lock state.
-    # But get_draft_by_id attempts to acquire lock.
-    # Since we are just changing status, let's just return the object directly to avoid side-effects.
-
-    # Construct response manually to avoid lock overhead or just assume default lock state for response
-    # Actually, best to return consistent response.
-    # Let's map it directly.
+    updated_row = result.mappings().fetchone()
 
     res_dict = dict(updated_row)
     # Locking info might be null if we didn't join, but the table has the columns.
     return DraftResponse.model_validate(res_dict)
 
 
-async def assemble_artifact(draft_id: UUID, user_oid: UUID) -> AgentArtifact:
+async def assemble_artifact(session: AsyncSession, draft_id: UUID, user_oid: UUID) -> AgentArtifact:
     """
     Assembles the canonical AgentArtifact from a draft.
     Requires draft to be APPROVED.
     """
     # Use get_draft_by_id as standard accessor.
-    # Note: get_draft_by_id attempts to acquire a lock.
-    # If the draft is APPROVED, it's typically read-only or final, so lock might be irrelevant or we accept shared lock.
-    # Passing empty roles list as we are not checking editing rights here, just assembly rights
-    # (checked by caller via approval status?)
-    # Actually, we rely on the draft status check.
-
-    draft = await get_draft_by_id(draft_id, user_oid, [])
+    draft = await get_draft_by_id(session, draft_id, user_oid, [])
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
@@ -232,12 +238,12 @@ async def assemble_artifact(draft_id: UUID, user_oid: UUID) -> AgentArtifact:
     return artifact
 
 
-async def publish_artifact(draft_id: UUID, signature: str, user_oid: UUID) -> str:
+async def publish_artifact(session: AsyncSession, draft_id: UUID, signature: str, user_oid: UUID) -> str:
     """
     Publishes the signed artifact.
     """
     # 1. Assemble (checks approval)
-    artifact = await assemble_artifact(draft_id, user_oid)
+    artifact = await assemble_artifact(session, draft_id, user_oid)
 
     # 2. Inject Signature
     artifact.author_signature = signature

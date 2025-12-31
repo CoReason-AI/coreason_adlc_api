@@ -40,12 +40,14 @@ async def test_telemetry_worker_success() -> None:
     # Side effect: first return data, then raise CancelledError to stop loop
     mock_redis.blpop.side_effect = [("telemetry_queue", json.dumps(sample_payload)), asyncio.CancelledError("Stop")]
 
-    mock_pool = MagicMock()
-    mock_pool.execute = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session_factory.return_value.__aexit__.return_value = None
 
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_redis),
-        patch("coreason_adlc_api.telemetry.worker.get_pool", return_value=mock_pool),
+        patch("coreason_adlc_api.telemetry.worker.async_session_factory", mock_session_factory),
     ):
         try:
             await telemetry_worker()
@@ -53,19 +55,20 @@ async def test_telemetry_worker_success() -> None:
             pass
 
         # Verify DB insert
-        assert mock_pool.execute.called
-        args = mock_pool.execute.call_args[0]
-        query = args[0]
-        assert "INSERT INTO telemetry.telemetry_logs" in query
+        assert mock_session.execute.called
+        args, kwargs = mock_session.execute.call_args
+        stmt = args[0]
+        params = args[1]
+
+        assert "INSERT INTO telemetry.telemetry_logs" in str(stmt)
 
         # Args: user_uuid, auc_id, model_name, req, res, cost, latency, timestamp
-        assert args[1] == UUID(str(sample_payload["user_uuid"]))
-        assert args[2] == sample_payload["auc_id"]
-        assert args[3] == sample_payload["model_name"]
-        # JSON fields are dumped strings
-        assert args[4] == json.dumps(sample_payload["request_payload"])
-        assert args[5] == json.dumps(sample_payload["response_payload"])
-        assert args[6] == sample_payload["cost_usd"]
+        assert params["user_uuid"] == UUID(str(sample_payload["user_uuid"]))
+        assert params["auc_id"] == sample_payload["auc_id"]
+        assert params["model_name"] == sample_payload["model_name"]
+        assert params["req_payload"] == json.dumps(sample_payload["request_payload"])
+        assert params["res_payload"] == json.dumps(sample_payload["response_payload"])
+        assert params["cost"] == sample_payload["cost_usd"]
 
 
 @pytest.mark.asyncio
@@ -73,12 +76,14 @@ async def test_telemetry_worker_bad_json() -> None:
     """Verify worker handles bad JSON gracefully."""
     mock_redis = AsyncMock()
     mock_redis.blpop.side_effect = [("telemetry_queue", "NOT JSON"), asyncio.CancelledError("Stop")]
-    mock_pool = MagicMock()
-    mock_pool.execute = AsyncMock()
+
+    mock_session_factory = MagicMock()
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
 
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_redis),
-        patch("coreason_adlc_api.telemetry.worker.get_pool", return_value=mock_pool),
+        patch("coreason_adlc_api.telemetry.worker.async_session_factory", mock_session_factory),
     ):
         try:
             await telemetry_worker()
@@ -87,7 +92,7 @@ async def test_telemetry_worker_bad_json() -> None:
 
         # Should log error but not crash (handled by try/except inside loop)
         # Should NOT call DB
-        mock_pool.execute.assert_not_called()
+        mock_session.execute.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -98,18 +103,21 @@ async def test_telemetry_worker_empty_result() -> None:
     # 2. (key, None) (unexpected but possible if key exists but empty? BLPOP returns list or None)
     # 3. Stop
     mock_redis.blpop.side_effect = [None, ("telemetry_queue", None), asyncio.CancelledError("Stop")]
-    mock_pool = MagicMock()
+
+    mock_session_factory = MagicMock()
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
 
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_redis),
-        patch("coreason_adlc_api.telemetry.worker.get_pool", return_value=mock_pool),
+        patch("coreason_adlc_api.telemetry.worker.async_session_factory", mock_session_factory),
     ):
         try:
             await telemetry_worker()
         except asyncio.CancelledError:
             pass
 
-        mock_pool.execute.assert_not_called()
+        mock_session.execute.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -119,11 +127,12 @@ async def test_telemetry_worker_outer_exception() -> None:
 
     # raise Exception, then Stop
     mock_redis.blpop.side_effect = [Exception("Redis connection failed"), asyncio.CancelledError("Stop")]
-    mock_pool = MagicMock()
+
+    mock_session_factory = MagicMock()
 
     with (
         patch("coreason_adlc_api.telemetry.worker.get_redis_client", return_value=mock_redis),
-        patch("coreason_adlc_api.telemetry.worker.get_pool", return_value=mock_pool),
+        patch("coreason_adlc_api.telemetry.worker.async_session_factory", mock_session_factory),
         patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
     ):  # Mock sleep to avoid waiting
         try:

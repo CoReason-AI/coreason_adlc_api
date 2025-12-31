@@ -13,8 +13,10 @@ import json
 from uuid import UUID
 
 from loguru import logger
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.database import async_session_factory
 from coreason_adlc_api.utils import get_redis_client
 
 
@@ -25,7 +27,6 @@ async def telemetry_worker() -> None:
     """
     logger.info("Telemetry Worker started.")
     client = get_redis_client()
-    pool = get_pool()
 
     while True:
         try:
@@ -47,30 +48,28 @@ async def telemetry_worker() -> None:
 
             try:
                 payload = json.loads(data)
-
-                # Insert into DB
-                query = """
-                    INSERT INTO telemetry.telemetry_logs (
-                        user_uuid, auc_id, model_name,
-                        request_payload, response_payload,
-                        cost_usd, latency_ms, timestamp
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                """
-
-                # Handle UUID conversion if needed
                 user_uuid = UUID(payload["user_uuid"]) if payload.get("user_uuid") else None
 
-                await pool.execute(
-                    query,
-                    user_uuid,
-                    payload.get("auc_id"),
-                    payload.get("model_name"),
-                    json.dumps(payload.get("request_payload")),  # Store as JSONB
-                    json.dumps(payload.get("response_payload")),  # Store as JSONB
-                    payload.get("cost_usd"),
-                    payload.get("latency_ms"),
-                    payload.get("timestamp"),  # Postgres should handle ISO format string for TIMESTAMP
-                )
+                async with async_session_factory() as session:
+                    stmt = text("""
+                        INSERT INTO telemetry.telemetry_logs (
+                            user_uuid, auc_id, model_name,
+                            request_payload, response_payload,
+                            cost_usd, latency_ms, timestamp
+                        ) VALUES (:user_uuid, :auc_id, :model_name, :req_payload, :res_payload, :cost, :latency, :ts)
+                    """)
+
+                    await session.execute(stmt, {
+                        "user_uuid": user_uuid,
+                        "auc_id": payload.get("auc_id"),
+                        "model_name": payload.get("model_name"),
+                        "req_payload": json.dumps(payload.get("request_payload")),
+                        "res_payload": json.dumps(payload.get("response_payload")),
+                        "cost": payload.get("cost_usd"),
+                        "latency": payload.get("latency_ms"),
+                        "ts": payload.get("timestamp")
+                    })
+                    await session.commit()
 
             except Exception as e:
                 logger.error(f"Failed to process telemetry log: {e}. Data: {data}")

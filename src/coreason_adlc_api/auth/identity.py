@@ -15,12 +15,16 @@ from uuid import UUID
 
 import httpx
 import jwt
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from loguru import logger
+from sqlalchemy import select, func
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from coreason_adlc_api.auth.models import GroupMapping, User
 from coreason_adlc_api.auth.schemas import UserIdentity
 from coreason_adlc_api.config import settings
-from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.dependencies import get_db
 from coreason_adlc_api.utils import get_http_client
 
 __all__ = [
@@ -69,7 +73,10 @@ async def get_oidc_config() -> Dict[str, Any]:
         ) from e
 
 
-async def parse_and_validate_token(authorization: str = Header(..., alias="Authorization")) -> UserIdentity:
+async def parse_and_validate_token(
+    authorization: str = Header(..., alias="Authorization"),
+    session: AsyncSession = Depends(get_db),
+) -> UserIdentity:
     """
     Parses the Bearer token, validates signature using RS256 and upstream JWKS, and extracts identity.
     """
@@ -153,22 +160,23 @@ async def parse_and_validate_token(authorization: str = Header(..., alias="Autho
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token claims") from None
 
 
-async def map_groups_to_projects(group_oids: List[UUID]) -> List[str]:
+async def map_groups_to_projects(session: AsyncSession, group_oids: List[UUID]) -> List[str]:
     """
     Queries identity.group_mappings to determine allowed AUC IDs for the user's groups.
     """
-    pool = get_pool()
-
-    query = """
-        SELECT unnest(allowed_auc_ids) as auc_id
-        FROM identity.group_mappings
-        WHERE sso_group_oid = ANY($1::uuid[])
-    """
+    if not group_oids:
+        return []
 
     try:
-        rows = await pool.fetch(query, group_oids)
+        # We need to unnest allowed_auc_ids.
+        # SQLAlchemy Core:
+        stmt = (
+            select(func.unnest(GroupMapping.allowed_auc_ids).label("auc_id"))
+            .where(GroupMapping.sso_group_oid.in_(group_oids))
+        )
+        result = await session.execute(stmt)
         # Deduplicate results
-        projects = list({row["auc_id"] for row in rows})
+        projects = list({row[0] for row in result})
         return projects
     except Exception as e:
         logger.error(f"Failed to map groups to projects: {e}")
@@ -176,21 +184,29 @@ async def map_groups_to_projects(group_oids: List[UUID]) -> List[str]:
         return []
 
 
-async def upsert_user(identity: UserIdentity) -> None:
+async def upsert_user(session: AsyncSession, identity: UserIdentity) -> None:
     """
     Upserts the user into identity.users on login.
     """
-    pool = get_pool()
-    query = """
-        INSERT INTO identity.users (user_uuid, email, full_name, last_login)
-        VALUES ($1, $2, $3, NOW())
-        ON CONFLICT (user_uuid) DO UPDATE
-        SET email = EXCLUDED.email,
-            full_name = EXCLUDED.full_name,
-            last_login = EXCLUDED.last_login;
-    """
+    stmt = insert(User).values(
+        user_uuid=identity.oid,
+        email=identity.email,
+        full_name=identity.full_name,
+        last_login=func.now(),
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[User.user_uuid],
+        set_={
+            "email": stmt.excluded.email,
+            "full_name": stmt.excluded.full_name,
+            "last_login": stmt.excluded.last_login,
+        },
+    )
+
     try:
-        await pool.execute(query, identity.oid, identity.email, identity.full_name)
+        await session.execute(stmt)
+        await session.commit()
     except Exception as e:
         logger.error(f"Failed to upsert user {identity.oid}: {e}")
+        await session.rollback()
         # Non-blocking error, but should be noted

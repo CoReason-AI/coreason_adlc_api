@@ -19,27 +19,15 @@ from coreason_adlc_api.workbench.schemas import ApprovalStatus, DraftCreate, Dra
 from coreason_adlc_api.workbench.service import create_draft, get_draft_by_id, get_drafts, update_draft
 
 
-@pytest.fixture
-def mock_pool() -> Generator[AsyncMock, None, None]:
-    pool = AsyncMock()
-    # Explicitly ensure methods are awaitable
-    pool.fetchrow = AsyncMock()
-    pool.fetch = AsyncMock()
-    pool.execute = AsyncMock()
-    # Patch get_pool in all usage locations
-    with (
-        patch("coreason_adlc_api.workbench.service.get_pool", return_value=pool),
-        patch("coreason_adlc_api.workbench.locking.get_pool", return_value=pool),
-    ):
-        yield pool
-
+from unittest.mock import MagicMock
+from sqlalchemy.engine import Result
 
 @pytest.mark.asyncio
-async def test_create_draft_logic(mock_pool: AsyncMock) -> None:
+async def test_create_draft_logic(mock_db_session: AsyncMock) -> None:
     user_id = uuid.uuid4()
     draft = DraftCreate(auc_id="test-auc", title="test", oas_content={"a": 1})
 
-    mock_pool.fetchrow.return_value = {
+    mock_row = {
         "draft_id": uuid.uuid4(),
         "user_uuid": user_id,
         "auc_id": "test-auc",
@@ -48,26 +36,27 @@ async def test_create_draft_logic(mock_pool: AsyncMock) -> None:
         "created_at": "2024-01-01T00:00:00Z",
         "updated_at": "2024-01-01T00:00:00Z",
     }
+    mock_db_session.execute.return_value.mappings.return_value.fetchone.return_value = mock_row
 
-    res = await create_draft(draft, user_id)
+    res = await create_draft(mock_db_session, draft, user_id)
     assert res.title == "test"
-    mock_pool.fetchrow.assert_called_once()
-    args = mock_pool.fetchrow.call_args[0]
-    assert "INSERT INTO" in args[0]
+    mock_db_session.execute.assert_called_once()
+    args, _ = mock_db_session.execute.call_args
+    assert "INSERT INTO" in str(args[0])
 
 
 @pytest.mark.asyncio
-async def test_create_draft_failure(mock_pool: AsyncMock) -> None:
-    mock_pool.fetchrow.return_value = None
+async def test_create_draft_failure(mock_db_session: AsyncMock) -> None:
+    mock_db_session.execute.return_value.mappings.return_value.fetchone.return_value = None
     draft = DraftCreate(auc_id="test-auc", title="test", oas_content={})
 
     with pytest.raises(RuntimeError):
-        await create_draft(draft, uuid.uuid4())
+        await create_draft(mock_db_session, draft, uuid.uuid4())
 
 
 @pytest.mark.asyncio
-async def test_get_drafts_logic(mock_pool: AsyncMock) -> None:
-    mock_pool.fetch.return_value = [
+async def test_get_drafts_logic(mock_db_session: AsyncMock) -> None:
+    mock_db_session.execute.return_value.mappings.return_value.all.return_value = [
         {
             "draft_id": uuid.uuid4(),
             "user_uuid": uuid.uuid4(),
@@ -79,15 +68,15 @@ async def test_get_drafts_logic(mock_pool: AsyncMock) -> None:
         }
     ]
 
-    res = await get_drafts("test-auc")
+    res = await get_drafts(mock_db_session, "test-auc")
     assert len(res) == 1
-    mock_pool.fetch.assert_called_once()
+    mock_db_session.execute.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_draft_by_id_logic(mock_pool: AsyncMock) -> None:
+async def test_get_draft_by_id_logic(mock_db_session: AsyncMock) -> None:
     draft_id = uuid.uuid4()
-    mock_pool.fetchrow.return_value = {
+    mock_db_session.execute.return_value.mappings.return_value.fetchone.return_value = {
         "draft_id": draft_id,
         "user_uuid": uuid.uuid4(),
         "auc_id": "test-auc",
@@ -101,37 +90,37 @@ async def test_get_draft_by_id_logic(mock_pool: AsyncMock) -> None:
 
     # Mock acquire_draft_lock to avoid transaction logic complexity in service test
     with patch("coreason_adlc_api.workbench.service.acquire_draft_lock") as mock_lock:
-        res = await get_draft_by_id(draft_id, uuid.uuid4(), [])
+        res = await get_draft_by_id(mock_db_session, draft_id, uuid.uuid4(), [])
         assert res is not None
         assert res.draft_id == draft_id
         mock_lock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_get_draft_by_id_missing(mock_pool: AsyncMock) -> None:
+async def test_get_draft_by_id_missing(mock_db_session: AsyncMock) -> None:
     with patch("coreason_adlc_api.workbench.service.acquire_draft_lock"):
-        mock_pool.fetchrow.return_value = None
-        res = await get_draft_by_id(uuid.uuid4(), uuid.uuid4(), [])
+        mock_db_session.execute.return_value.mappings.return_value.fetchone.return_value = None
+        res = await get_draft_by_id(mock_db_session, uuid.uuid4(), uuid.uuid4(), [])
         assert res is None
 
 
 @pytest.mark.asyncio
-async def test_get_draft_by_id_lock_404(mock_pool: AsyncMock) -> None:
+async def test_get_draft_by_id_lock_404(mock_db_session: AsyncMock) -> None:
     with patch("coreason_adlc_api.workbench.service.acquire_draft_lock", side_effect=HTTPException(status_code=404)):
-        res = await get_draft_by_id(uuid.uuid4(), uuid.uuid4(), [])
+        res = await get_draft_by_id(mock_db_session, uuid.uuid4(), uuid.uuid4(), [])
         assert res is None
 
 
 @pytest.mark.asyncio
-async def test_get_draft_by_id_lock_other_error(mock_pool: AsyncMock) -> None:
+async def test_get_draft_by_id_lock_other_error(mock_db_session: AsyncMock) -> None:
     with patch("coreason_adlc_api.workbench.service.acquire_draft_lock", side_effect=HTTPException(status_code=423)):
         with pytest.raises(HTTPException) as exc:
-            await get_draft_by_id(uuid.uuid4(), uuid.uuid4(), [])
+            await get_draft_by_id(mock_db_session, uuid.uuid4(), uuid.uuid4(), [])
         assert exc.value.status_code == 423
 
 
 @pytest.mark.asyncio
-async def test_update_draft_logic(mock_pool: AsyncMock) -> None:
+async def test_update_draft_logic(mock_db_session: AsyncMock) -> None:
     draft_id = uuid.uuid4()
     user_id = uuid.uuid4()
     update = DraftUpdate(title="New Title", runtime_env="reqs.txt", oas_content={"b": 2})
@@ -139,89 +128,140 @@ async def test_update_draft_logic(mock_pool: AsyncMock) -> None:
     from datetime import datetime, timedelta, timezone
 
     # Define return values for consecutive calls:
-    # 1. _check_status_for_update -> { "status": "DRAFT" }
+    # 1. _check_status_for_update (SELECT status)
     # 2. update_draft (UPDATE query) -> Updated Row
 
-    mock_pool.fetchrow.side_effect = [
-        {"status": ApprovalStatus.DRAFT},
-        {
-            "draft_id": draft_id,
-            "user_uuid": user_id,
-            "auc_id": "test-auc",
-            "title": "New Title",
-            "oas_content": {"b": 2},
-            "runtime_env": "reqs.txt",
-            "created_at": "2024-01-01T00:00:00Z",
-            "updated_at": "2024-01-01T00:00:00Z",
-            "locked_by_user": user_id,
-            "lock_expiry": datetime.now(timezone.utc) + timedelta(minutes=1),
-            "status": ApprovalStatus.DRAFT,
-        },
-    ]
+    def execute_side_effect(stmt, params=None):
+        query = str(stmt)
+        mock_res = MagicMock(spec=Result)
+
+        if "SELECT status" in query:
+            mock_res.fetchone.return_value = (ApprovalStatus.DRAFT,)
+        elif "UPDATE workbench.agent_drafts" in query:
+            mock_res.mappings.return_value.fetchone.return_value = {
+                "draft_id": draft_id,
+                "user_uuid": user_id,
+                "auc_id": "test-auc",
+                "title": "New Title",
+                "oas_content": {"b": 2},
+                "runtime_env": "reqs.txt",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "locked_by_user": user_id,
+                "lock_expiry": datetime.now(timezone.utc) + timedelta(minutes=1),
+                "status": ApprovalStatus.DRAFT,
+            }
+        else:
+             mock_res.fetchone.return_value = None
+
+        return mock_res
+
+    mock_db_session.execute.side_effect = execute_side_effect
 
     with patch("coreason_adlc_api.workbench.service.verify_lock_for_update"):
-        res = await update_draft(draft_id, update, user_id)
+        res = await update_draft(mock_db_session, draft_id, update, user_id)
 
     assert res.title == "New Title"
     assert res.runtime_env == "reqs.txt"
-    # assert "UPDATE" in mock_pool.fetchrow.call_args[0][0] # Hard to check last call exactly with side_effect
-    assert mock_pool.fetchrow.call_count == 2
+    assert mock_db_session.execute.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_update_draft_no_fields(mock_pool: AsyncMock) -> None:
+async def test_update_draft_no_fields(mock_db_session: AsyncMock) -> None:
     draft_id = uuid.uuid4()
     user_id = uuid.uuid4()
 
     from datetime import datetime, timedelta, timezone
 
-    mock_pool.fetchrow.side_effect = [
-        {"status": ApprovalStatus.DRAFT},
-        {
-            "draft_id": draft_id,
-            "user_uuid": user_id,
-            "auc_id": "test-auc",
-            "title": "Old Title",
-            "oas_content": {},
-            "created_at": "2024-01-01T00:00:00Z",
-            "updated_at": "2024-01-01T00:00:00Z",
-            "locked_by_user": user_id,
-            "lock_expiry": datetime.now(timezone.utc) + timedelta(minutes=1),
-            "status": ApprovalStatus.DRAFT,
-        },
-    ]
+    # Calls:
+    # 1. verify_lock (patched)
+    # 2. check_status
+    # 3. get_draft_by_id (if no fields)
+
+    def execute_side_effect(stmt, params=None):
+        query = str(stmt)
+        mock_res = MagicMock(spec=Result)
+
+        if "SELECT status" in query:
+            mock_res.fetchone.return_value = (ApprovalStatus.DRAFT,)
+        elif "SELECT * FROM workbench.agent_drafts" in query:
+            mock_res.mappings.return_value.fetchone.return_value = {
+                "draft_id": draft_id,
+                "user_uuid": user_id,
+                "auc_id": "test-auc",
+                "title": "Old Title",
+                "oas_content": {},
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "locked_by_user": user_id,
+                "lock_expiry": datetime.now(timezone.utc) + timedelta(minutes=1),
+                "status": ApprovalStatus.DRAFT,
+            }
+        else:
+             mock_res.fetchone.return_value = None
+
+        return mock_res
+
+    mock_db_session.execute.side_effect = execute_side_effect
 
     # Mock acquire_draft_lock because get_draft_by_id calls it
     with (
         patch("coreason_adlc_api.workbench.service.acquire_draft_lock"),
         patch("coreason_adlc_api.workbench.service.verify_lock_for_update"),
     ):
-        res = await update_draft(draft_id, DraftUpdate(), user_id)
+        res = await update_draft(mock_db_session, draft_id, DraftUpdate(), user_id)
         assert res.title == "Old Title"
-        assert mock_pool.fetchrow.call_count == 2
+        # check_status + get_draft_by_id
+        assert mock_db_session.execute.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_update_draft_not_found(mock_pool: AsyncMock) -> None:
+async def test_update_draft_not_found(mock_db_session: AsyncMock) -> None:
     # Case: Update with fields, but row not found
-    # Mock status check success, but update returns None (race condition or not found)
 
-    mock_pool.fetchrow.side_effect = [{"status": ApprovalStatus.DRAFT}, None]
+    def execute_side_effect(stmt, params=None):
+        query = str(stmt)
+        mock_res = MagicMock(spec=Result)
+
+        if "SELECT status" in query:
+            mock_res.fetchone.return_value = (ApprovalStatus.DRAFT,)
+        elif "UPDATE workbench.agent_drafts" in query:
+            mock_res.mappings.return_value.fetchone.return_value = None
+        else:
+             mock_res.fetchone.return_value = None
+
+        return mock_res
+
+    mock_db_session.execute.side_effect = execute_side_effect
 
     with pytest.raises(HTTPException) as exc, patch("coreason_adlc_api.workbench.service.verify_lock_for_update"):
-        await update_draft(uuid.uuid4(), DraftUpdate(title="X"), uuid.uuid4())
+        await update_draft(mock_db_session, uuid.uuid4(), DraftUpdate(title="X"), uuid.uuid4())
     assert exc.value.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_update_draft_no_fields_not_found(mock_pool: AsyncMock) -> None:
+async def test_update_draft_no_fields_not_found(mock_db_session: AsyncMock) -> None:
     # Case: No fields, but draft lookup fails
-    mock_pool.fetchrow.side_effect = [{"status": ApprovalStatus.DRAFT}, None]
+
+    def execute_side_effect(stmt, params=None):
+        query = str(stmt)
+        mock_res = MagicMock(spec=Result)
+
+        if "SELECT status" in query:
+            mock_res.fetchone.return_value = (ApprovalStatus.DRAFT,)
+        elif "SELECT * FROM workbench.agent_drafts" in query:
+            mock_res.mappings.return_value.fetchone.return_value = None
+        else:
+             mock_res.fetchone.return_value = None
+
+        return mock_res
+
+    mock_db_session.execute.side_effect = execute_side_effect
 
     with (
         pytest.raises(HTTPException) as exc,
         patch("coreason_adlc_api.workbench.service.verify_lock_for_update"),
         patch("coreason_adlc_api.workbench.service.acquire_draft_lock"),
     ):
-        await update_draft(uuid.uuid4(), DraftUpdate(), uuid.uuid4())
+        await update_draft(mock_db_session, uuid.uuid4(), DraftUpdate(), uuid.uuid4())
     assert exc.value.status_code == 404

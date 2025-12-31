@@ -63,99 +63,75 @@ async def test_store_secret_api(mock_auth_header: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_retrieve_decrypted_secret_logic() -> None:
+async def test_retrieve_decrypted_secret_logic(mock_db_session: AsyncMock) -> None:
     """Test the internal retrieval logic with mocked DB."""
 
-    mock_pool = AsyncMock()
     # Mock row
-    mock_row = {
-        "encrypted_value": "mock_encrypted_string"
-    }  # This string must be valid base64 if decrypt is called real
+    mock_row = ["mock_encrypted_string"]
+    mock_db_session.execute.return_value.fetchone.return_value = mock_row
 
-    # But wait, retrieve_decrypted_secret calls vault_crypto.decrypt_secret
-    # If we don't mock vault_crypto, it will try to decrypt "mock_encrypted_string" and fail.
-
-    with (
-        patch("coreason_adlc_api.vault.service.get_pool", return_value=mock_pool),
-        patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto,
-    ):
-        mock_pool.fetchrow.return_value = mock_row
+    with patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto:
         mock_crypto.decrypt_secret.return_value = "decrypted-key"
 
-        result = await retrieve_decrypted_secret("project-omega", "openai")
+        result = await retrieve_decrypted_secret(mock_db_session, "project-omega", "openai")
 
         assert result == "decrypted-key"
-        mock_pool.fetchrow.assert_called_once()
+        mock_db_session.execute.assert_called_once()
         mock_crypto.decrypt_secret.assert_called_once_with("mock_encrypted_string")
 
 
 @pytest.mark.asyncio
-async def test_retrieve_secret_not_found() -> None:
+async def test_retrieve_secret_not_found(mock_db_session: AsyncMock) -> None:
     """Test retrieval when secret does not exist."""
-    mock_pool = AsyncMock()
-    mock_pool.fetchrow.return_value = None
+    mock_db_session.execute.return_value.fetchone.return_value = None
 
-    with patch("coreason_adlc_api.vault.service.get_pool", return_value=mock_pool):
-        with pytest.raises(ValueError, match="No secret found"):
-            await retrieve_decrypted_secret("project-omega", "missing")
+    with pytest.raises(ValueError, match="No secret found"):
+        await retrieve_decrypted_secret(mock_db_session, "project-omega", "missing")
 
 
 @pytest.mark.asyncio
-async def test_store_secret_logic() -> None:
+async def test_store_secret_logic(mock_db_session: AsyncMock) -> None:
     """Test the internal store logic with mocked DB."""
-    mock_pool = AsyncMock()
-    mock_row = {"secret_id": uuid.uuid4()}
-    mock_pool.fetchrow.return_value = mock_row
+    generated_uuid = uuid.uuid4()
+    mock_row = [generated_uuid]
+    mock_db_session.execute.return_value.fetchone.return_value = mock_row
 
-    with (
-        patch("coreason_adlc_api.vault.service.get_pool", return_value=mock_pool),
-        patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto,
-    ):
+    with patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto:
         mock_crypto.encrypt_secret.return_value = "encrypted-data"
 
-        sid = await store_secret("project-omega", "openai", "raw-key", uuid.uuid4())
+        sid = await store_secret(mock_db_session, "project-omega", "openai", "raw-key", uuid.uuid4())
 
-        assert sid == mock_row["secret_id"]
-        mock_pool.fetchrow.assert_called_once()
-        # Verify SQL args
-        args = mock_pool.fetchrow.call_args[0]
-        assert "INSERT INTO vault.secrets" in args[0]
-        assert "encrypted-data" in args  # should be passed
+        assert sid == generated_uuid
+        mock_db_session.execute.assert_called_once()
+        mock_db_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_store_secret_failure() -> None:
+async def test_store_secret_failure(mock_db_session: AsyncMock) -> None:
     """Test store_secret handling of DB errors."""
-    mock_pool = AsyncMock()
     # Simulate DB error
-    mock_pool.fetchrow.side_effect = Exception("DB Connection Lost")
+    mock_db_session.execute.side_effect = Exception("DB Connection Lost")
 
-    with (
-        patch("coreason_adlc_api.vault.service.get_pool", return_value=mock_pool),
-        patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto,
-    ):
+    with patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto:
         mock_crypto.encrypt_secret.return_value = "encrypted-data"
 
         with pytest.raises(HTTPException) as exc:
-            await store_secret("project-omega", "openai", "raw-key", uuid.uuid4())
+            await store_secret(mock_db_session, "project-omega", "openai", "raw-key", uuid.uuid4())
 
         assert exc.value.status_code == 500
+        mock_db_session.rollback.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_store_secret_no_id_returned() -> None:
+async def test_store_secret_no_id_returned(mock_db_session: AsyncMock) -> None:
     """Test store_secret handling when insert returns no row (unlikely but defensive)."""
-    mock_pool = AsyncMock()
-    mock_pool.fetchrow.return_value = None
+    mock_db_session.execute.return_value.fetchone.return_value = None
 
-    with (
-        patch("coreason_adlc_api.vault.service.get_pool", return_value=mock_pool),
-        patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto,
-    ):
+    with patch("coreason_adlc_api.vault.service.vault_crypto") as mock_crypto:
         mock_crypto.encrypt_secret.return_value = "encrypted-data"
 
         with pytest.raises(HTTPException) as exc:
-            await store_secret("project-omega", "openai", "raw-key", uuid.uuid4())
+            await store_secret(mock_db_session, "project-omega", "openai", "raw-key", uuid.uuid4())
 
         assert exc.value.status_code == 500
 

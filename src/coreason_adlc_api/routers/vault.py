@@ -11,8 +11,10 @@
 import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
+from coreason_adlc_api.dependencies import get_db
 from coreason_adlc_api.vault.schemas import CreateSecretRequest, SecretResponse
 from coreason_adlc_api.vault.service import store_secret
 
@@ -21,14 +23,16 @@ router = APIRouter(prefix="/vault", tags=["Vault"])
 
 @router.post("/secrets", response_model=SecretResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update_secret(
-    request: CreateSecretRequest, identity: UserIdentity = Depends(parse_and_validate_token)
+    request: CreateSecretRequest,
+    identity: UserIdentity = Depends(parse_and_validate_token),
+    session: AsyncSession = Depends(get_db),
 ) -> SecretResponse:
     """
     Encrypts and stores a new API key.
     Requires Authentication.
     """
     # Authorization check: Does user have access to this auc_id?
-    allowed_projects = await map_groups_to_projects(identity.groups)
+    allowed_projects = await map_groups_to_projects(session, identity.groups)
     if request.auc_id not in allowed_projects:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -36,6 +40,7 @@ async def create_or_update_secret(
         )
 
     secret_id = await store_secret(
+        session=session,
         auc_id=request.auc_id,
         service_name=request.service_name,
         raw_api_key=request.raw_api_key,

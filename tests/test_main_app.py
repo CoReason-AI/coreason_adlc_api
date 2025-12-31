@@ -29,15 +29,7 @@ async def test_lifespan() -> None:
     """Verify lifespan startup and shutdown."""
     app = create_app()
 
-    with (
-        patch("coreason_adlc_api.app.init_db", new=AsyncMock()) as mock_init,
-        patch("coreason_adlc_api.app.close_db", new=AsyncMock()) as mock_close,
-        patch("coreason_adlc_api.app.telemetry_worker", new=AsyncMock()) as mock_worker,
-    ):
+    with patch("coreason_adlc_api.app.telemetry_worker", new=AsyncMock()) as mock_worker:
         async with lifespan(app):
-            mock_init.assert_called_once()
-            mock_close.assert_not_called()
             # Worker should be started
             mock_worker.assert_called_once()
-
-        mock_close.assert_called_once()

@@ -16,52 +16,17 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.engine import Result
 
 from coreason_adlc_api.workbench.locking import AccessMode, acquire_draft_lock, verify_lock_for_update
 from coreason_adlc_api.workbench.schemas import DraftCreate, DraftResponse
-
-
-# --- Fixtures ---
-@pytest.fixture
-def mock_pool() -> Generator[MagicMock, None, None]:
-    pool = MagicMock(spec=["acquire", "fetchrow", "execute", "fetch"])
-
-    # Setup connection context manager
-    conn = MagicMock()
-    conn.fetchrow = AsyncMock()
-    conn.execute = AsyncMock()
-    conn.fetch = AsyncMock()
-
-    conn_cm = MagicMock()
-    conn_cm.__aenter__ = AsyncMock(return_value=conn)
-    conn_cm.__aexit__ = AsyncMock(return_value=None)
-    pool.acquire.return_value = conn_cm
-
-    txn_cm = MagicMock()
-    txn_cm.__aenter__ = AsyncMock(return_value=None)
-    txn_cm.__aexit__ = AsyncMock(return_value=None)
-    conn.transaction.return_value = txn_cm
-
-    # Configure pool methods
-    pool.fetchrow = AsyncMock()
-    pool.execute = AsyncMock()
-    pool.fetch = AsyncMock()
-
-    # Patch globally and locally
-    with (
-        patch("coreason_adlc_api.db.get_pool", return_value=pool),
-        patch("coreason_adlc_api.workbench.locking.get_pool", return_value=pool),
-        patch("coreason_adlc_api.workbench.service.get_pool", return_value=pool),
-        patch("coreason_adlc_api.auth.identity.get_pool", return_value=pool),
-    ):
-        yield pool
 
 
 # --- Complex Scenarios ---
 
 
 @pytest.mark.asyncio
-async def test_conflicting_safe_view_vs_edit(mock_pool: MagicMock) -> None:
+async def test_conflicting_safe_view_vs_edit(mock_db_session: AsyncMock) -> None:
     """
     Scenario:
     1. User A (Edit) holds lock.
@@ -73,34 +38,30 @@ async def test_conflicting_safe_view_vs_edit(mock_pool: MagicMock) -> None:
     user_a = uuid4()
     user_b = uuid4()
 
-    mock_conn = mock_pool.acquire.return_value.__aenter__.return_value
-
     # State
     lock_state = {"locked_by": user_a, "expiry": datetime.now(timezone.utc) + timedelta(seconds=30)}
 
-    async def fetchrow_side_effect(query: str, *args: object) -> dict[str, object] | None:
-        if "SELECT locked_by_user" in query:
-            return {"locked_by_user": lock_state["locked_by"], "lock_expiry": lock_state["expiry"]}
-        if "SELECT * FROM workbench.agent_drafts" in query:
-            # Minimal mock for get_draft_by_id or similar checks
-            return {
-                "draft_id": draft_id,
-                "locked_by_user": lock_state["locked_by"],
-                "lock_expiry": lock_state["expiry"],
-            }
-        return None
+    def execute_side_effect(stmt, params=None) -> MagicMock:
+        query = str(stmt)
+        mock_res = MagicMock(spec=Result)
 
-    mock_conn.fetchrow.side_effect = fetchrow_side_effect
-    mock_pool.fetchrow.side_effect = fetchrow_side_effect
+        if "SELECT locked_by_user" in query:
+            # Row = (locked_by_user, lock_expiry)
+            mock_res.fetchone.return_value = (lock_state["locked_by"], lock_state["expiry"])
+            return mock_res
+
+        return mock_res
+
+    mock_db_session.execute.side_effect = execute_side_effect
 
     # 1. User B (Manager) attempts to acquire
     # Should get SAFE_VIEW because it is locked by User A
-    mode = await acquire_draft_lock(draft_id, user_b, ["MANAGER"])
+    mode = await acquire_draft_lock(mock_db_session, draft_id, user_b, ["MANAGER"])
     assert mode == AccessMode.SAFE_VIEW
 
     # 2. User B attempts to EDIT (simulated via verify_lock_for_update)
     with pytest.raises(HTTPException) as exc:
-        await verify_lock_for_update(draft_id, user_b)
+        await verify_lock_for_update(mock_db_session, draft_id, user_b)
 
     assert exc.value.status_code == 423
     assert "You must acquire a lock" in exc.value.detail
@@ -111,12 +72,12 @@ async def test_conflicting_safe_view_vs_edit(mock_pool: MagicMock) -> None:
     # 4. User B attempts to acquire again
     # Should get EDIT now
     # Note: acquire_draft_lock will execute UPDATE to seize lock
-    mode = await acquire_draft_lock(draft_id, user_b, ["MANAGER"])
+    mode = await acquire_draft_lock(mock_db_session, draft_id, user_b, ["MANAGER"])
     assert mode == AccessMode.EDIT
 
 
 @pytest.mark.asyncio
-async def test_project_switching_race_condition(mock_pool: MagicMock) -> None:
+async def test_project_switching_race_condition(mock_db_session: AsyncMock) -> None:
     """
     Scenario:
     User initiates a request. Auth middleware checks permissions (Project X allowed).
@@ -168,7 +129,8 @@ async def test_project_switching_race_condition(mock_pool: MagicMock) -> None:
 
         with patch("coreason_adlc_api.routers.workbench.create_draft", side_effect=slow_create):
             # ACT
-            response = await create_new_draft(draft_req, identity)
+            # Must pass session now!
+            response = await create_new_draft(draft_req, identity, mock_db_session)
 
             # ASSERT
             assert response.title == "Race Test"
@@ -177,7 +139,7 @@ async def test_project_switching_race_condition(mock_pool: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_expired_jwt_during_long_operation(mock_oidc_factory: Any) -> None:
+async def test_expired_jwt_during_long_operation(mock_oidc_factory: Any, mock_db_session: AsyncMock) -> None:
     """
     Scenario:
     JWT is valid at T=0.
@@ -196,7 +158,8 @@ async def test_expired_jwt_during_long_operation(mock_oidc_factory: Any) -> None
     # 2. Validate Token (Entry)
     from coreason_adlc_api.auth.identity import parse_and_validate_token
 
-    identity = await parse_and_validate_token(header)
+    # Inject session mock
+    identity = await parse_and_validate_token(header, session=mock_db_session)
     assert identity.email == "test@example.com"
 
     # 3. Simulate Long Op (sleep past expiration)
@@ -208,7 +171,7 @@ async def test_expired_jwt_during_long_operation(mock_oidc_factory: Any) -> None
 
     # Prove that if we tried to validate NOW, it would fail
     with pytest.raises(HTTPException) as exc:
-        await parse_and_validate_token(header)
+        await parse_and_validate_token(header, session=mock_db_session)
     assert exc.value.status_code == 401
     assert "Token has expired" in exc.value.detail
 
@@ -217,7 +180,7 @@ async def test_expired_jwt_during_long_operation(mock_oidc_factory: Any) -> None
 
 
 @pytest.mark.asyncio
-async def test_safe_view_upgrade_attempt(mock_pool: MagicMock) -> None:
+async def test_safe_view_upgrade_attempt(mock_db_session: AsyncMock) -> None:
     """
     Scenario: User holds SAFE_VIEW (via Manager override).
     Attempts to 'upgrade' to EDIT while original owner still holds it.
@@ -230,15 +193,13 @@ async def test_safe_view_upgrade_attempt(mock_pool: MagicMock) -> None:
     # Mock DB state: Locked by owner
     future = datetime.now(timezone.utc) + timedelta(seconds=30)
 
-    async def fetchrow_side_effect(query: str, *args: object) -> dict[str, object] | None:
-        if "SELECT locked_by_user" in query:
-            return {"locked_by_user": owner_uuid, "lock_expiry": future}
-        return None
-
-    mock_pool.acquire.return_value.__aenter__.return_value.fetchrow.side_effect = fetchrow_side_effect
+    # Mock return for SELECT locked_by_user
+    mock_res = MagicMock(spec=Result)
+    mock_res.fetchone.return_value = (owner_uuid, future)
+    mock_db_session.execute.return_value = mock_res
 
     # Manager calls acquire again (hoping to edit)
-    mode = await acquire_draft_lock(draft_id, manager_uuid, ["MANAGER"])
+    mode = await acquire_draft_lock(mock_db_session, draft_id, manager_uuid, ["MANAGER"])
 
     # Should still be SAFE_VIEW, NOT EDIT
     assert mode == AccessMode.SAFE_VIEW

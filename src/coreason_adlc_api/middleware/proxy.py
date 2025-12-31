@@ -14,8 +14,10 @@ from typing import Any, Dict, List, Optional
 import litellm
 from fastapi import HTTPException, status
 from loguru import logger
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from coreason_adlc_api.db import get_pool
+from coreason_adlc_api.database import async_session_factory
 from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
@@ -43,23 +45,25 @@ class InferenceProxyService:
             return model.split("/")[0] if "/" in model else "openai"
 
     async def get_api_key_for_model(self, auc_id: str, model: str) -> str:
-        pool = get_pool()
         provider = self.get_provider_for_model(model)
 
-        query = """
-            SELECT encrypted_value
-            FROM vault.secrets
-            WHERE auc_id = $1 AND service_name = $2
-        """
-        row = await pool.fetchrow(query, auc_id, provider)
+        async with async_session_factory() as session:
+            stmt = text("""
+                SELECT encrypted_value
+                FROM vault.secrets
+                WHERE auc_id = :auc_id AND service_name = :service_name
+            """)
+            result = await session.execute(stmt, {"auc_id": auc_id, "service_name": provider})
+            row = result.fetchone()
 
-        if not row:
-            logger.error(f"No API key found for project {auc_id} service {provider}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"API Key not configured for {provider} in this project."
-            )
+            if not row:
+                logger.error(f"No API key found for project {auc_id} service {provider}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail=f"API Key not configured for {provider} in this project."
+                )
 
-        encrypted_value = row["encrypted_value"]
+            encrypted_value = row[0]
+
         try:
             crypto = VaultCrypto()
             return crypto.decrypt_secret(encrypted_value)

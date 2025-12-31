@@ -11,6 +11,7 @@
 from urllib.parse import quote_plus
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 from coreason_adlc_api.config import settings
 
@@ -39,3 +40,7 @@ async_session_factory = async_sessionmaker(
     expire_on_commit=False,
     autoflush=False,
 )
+
+
+class Base(DeclarativeBase):
+    pass

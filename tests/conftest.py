@@ -1,5 +1,5 @@
 from typing import Any, Callable, Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt
 import pytest
@@ -9,6 +9,26 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPubl
 
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.middleware.proxy import _breakers
+
+
+@pytest.fixture
+def mock_db_session() -> Generator[AsyncMock, None, None]:
+    """
+    Mocks the SQLAlchemy async session.
+    """
+    session = AsyncMock()
+    # Mock result of execute
+    result_mock = MagicMock()
+    result_mock.fetchone.return_value = None
+    result_mock.fetchall.return_value = []
+    result_mock.mappings.return_value.fetchone.return_value = None
+    result_mock.mappings.return_value.all.return_value = []
+
+    session.execute.return_value = result_mock
+
+    # Patch get_db dependency to yield this session
+    with patch("coreason_adlc_api.dependencies.get_db", return_value=session):
+        yield session
 
 
 @pytest.fixture(autouse=True)

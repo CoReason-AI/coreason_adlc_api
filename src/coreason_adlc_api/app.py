@@ -16,7 +16,6 @@ from fastapi import FastAPI
 from loguru import logger
 
 from coreason_adlc_api.config import settings
-from coreason_adlc_api.db import close_db, init_db
 from coreason_adlc_api.middleware.pii import PIIAnalyzer
 from coreason_adlc_api.routers import auth, interceptor, models, system, vault, workbench
 from coreason_adlc_api.telemetry.worker import telemetry_worker
@@ -29,9 +28,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Handles startup and shutdown events.
     """
     logger.info(f"Starting Coreason ADLC API in {settings.APP_ENV} mode...")
-
-    # Initialize Database
-    await init_db()
 
     # Initialize PII Analyzer (Warm-up models)
     # Offload to thread to avoid blocking startup if it takes time
@@ -56,8 +52,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await telemetry_task
     except asyncio.CancelledError:
         logger.info("Telemetry Worker stopped.")
-
-    await close_db()
 
 
 def create_app() -> FastAPI:
