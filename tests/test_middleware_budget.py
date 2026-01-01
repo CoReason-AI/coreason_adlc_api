@@ -90,3 +90,17 @@ async def test_check_budget_generic_exception(mock_quota_guard: Any) -> None:
 
     assert exc.value.status_code == 500
     assert "Internal server error" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_check_budget_raises_http_exception(mock_quota_guard: Any) -> None:
+    """Test that HTTPException raised from within the try block is re-raised."""
+    user_id = uuid.uuid4()
+    # Simulate QuotaGuard raising HTTPException directly (unlikely but possible if it validates inputs)
+    mock_quota_guard.check_and_increment.side_effect = HTTPException(status_code=418, detail="I'm a teapot")
+
+    with pytest.raises(HTTPException) as exc:
+        await check_budget_guardrail(user_id, 1.0)
+
+    assert exc.value.status_code == 418
+    assert "teapot" in exc.value.detail

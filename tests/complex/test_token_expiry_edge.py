@@ -11,7 +11,7 @@
 import asyncio
 import datetime
 from typing import Any, Dict
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
