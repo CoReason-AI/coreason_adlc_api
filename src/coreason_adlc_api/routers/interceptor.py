@@ -85,8 +85,8 @@ async def chat_completions(
 
     # Veritas scrubber is synchronous. We run it to ensure compliance logic executes,
     # even if IERLogger doesn't currently consume the preview in this version.
-    scrub_pii_payload(input_text)
-    scrub_pii_payload(response_content)
+    _ = scrub_pii_payload(input_text)
+    _ = scrub_pii_payload(response_content)
 
     # 6. Async Telemetry Logging via Veritas IERLogger
     latency_ms = int((time.time() - start_time) * 1000)
