@@ -18,11 +18,9 @@ from coreason_adlc_api.app import app
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from coreason_adlc_api.middleware.budget import BudgetService
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
-from coreason_adlc_api.middleware.telemetry import TelemetryService
 from coreason_adlc_api.routers.interceptor import (
     get_budget_service,
     get_proxy_service,
-    get_telemetry_service,
 )
 
 client = TestClient(app)
@@ -40,11 +38,9 @@ def mock_user_identity() -> Any:
 def mock_services() -> Any:
     mock_budget = mock.AsyncMock(spec=BudgetService)
     mock_proxy = mock.AsyncMock(spec=InferenceProxyService)
-    mock_telemetry = mock.AsyncMock(spec=TelemetryService)
 
     app.dependency_overrides[get_budget_service] = lambda: mock_budget
     app.dependency_overrides[get_proxy_service] = lambda: mock_proxy
-    app.dependency_overrides[get_telemetry_service] = lambda: mock_telemetry
 
     # Defaults
     mock_budget.check_budget_guardrail.return_value = True
@@ -59,22 +55,36 @@ def mock_services() -> Any:
     }
     mock_proxy.estimate_request_cost.return_value = 1.23  # Specific estimated cost
 
-    yield mock_budget, mock_proxy, mock_telemetry
+    yield mock_budget, mock_proxy
 
     del app.dependency_overrides[get_budget_service]
     del app.dependency_overrides[get_proxy_service]
-    del app.dependency_overrides[get_telemetry_service]
+
+
+@pytest.fixture
+def mock_ier_logger() -> Any:
+    # Patch the class in the router module
+    with mock.patch("coreason_adlc_api.routers.interceptor.IERLogger") as m:
+        instance = mock.MagicMock()
+        m.return_value = instance
+        yield instance
 
 
 @pytest.fixture
 def mock_scrub() -> Any:
     with mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as m:
-        m.side_effect = lambda x: f"SCRUBBED[{x}]"
+        # Need to return a coroutine because router calls await
+        async def side_effect(x: str) -> str:
+            return f"SCRUBBED[{x}]"
+
+        m.side_effect = side_effect
         yield m
 
 
-def test_interceptor_flow_success(mock_user_identity: Any, mock_services: Any, mock_scrub: Any) -> None:
-    mock_budget, mock_proxy, mock_telemetry = mock_services
+def test_interceptor_flow_success(
+    mock_user_identity: Any, mock_services: Any, mock_scrub: Any, mock_ier_logger: Any
+) -> None:
+    mock_budget, mock_proxy = mock_services
 
     payload = {
         "model": "gpt-4",
@@ -103,25 +113,20 @@ def test_interceptor_flow_success(mock_user_identity: Any, mock_services: Any, m
     # Verify Scrubbing
     assert mock_scrub.call_count == 2  # Input and Output
 
-    # Verify Telemetry
-    # Note: Telemetry is background task. TestClient waits for it?
-    # No, TestClient runs background tasks synchronously after the request.
-    mock_telemetry.async_log_telemetry.assert_called_once()
-    log_kwargs = mock_telemetry.async_log_telemetry.call_args[1]
-    assert log_kwargs["user_id"] == mock_user_identity.oid
-    assert log_kwargs["model_name"] == "gpt-4"
-    assert "SCRUBBED" in log_kwargs["input_text"]
-    assert "SCRUBBED" in log_kwargs["output_text"]
-
-    # Since litellm.completion_cost works on the mocked dict, it calculates real cost.
-    # We accept either the estimate (if calculation failed) or the calculated cost.
-    # In this environment, litellm calculated ~0.0015 based on the mock usage.
-    # We just want to ensure it's a float.
-    assert isinstance(log_kwargs["metadata"]["cost_usd"], float)
+    # Verify Telemetry via Veritas IERLogger
+    mock_ier_logger.log_llm_transaction.assert_called_once()
+    log_kwargs = mock_ier_logger.log_llm_transaction.call_args[1]
+    assert log_kwargs["user_id"] == str(mock_user_identity.oid)
+    assert log_kwargs["model"] == "gpt-4"
+    assert "SCRUBBED" in log_kwargs["prompt_preview"]
+    assert "SCRUBBED" in log_kwargs["response_preview"]
+    assert log_kwargs["input_tokens"] == 10
+    assert log_kwargs["output_tokens"] == 20
+    assert isinstance(log_kwargs["cost_usd"], float)
 
 
 def test_interceptor_proxy_exception(mock_user_identity: Any, mock_services: Any) -> None:
-    mock_budget, mock_proxy, mock_telemetry = mock_services
+    mock_budget, mock_proxy = mock_services
 
     mock_proxy.execute_inference.side_effect = Exception("Proxy Failed")
 
@@ -135,13 +140,10 @@ def test_interceptor_proxy_exception(mock_user_identity: Any, mock_services: Any
         client.post("/api/v1/chat/completions", json=payload)
 
 
-def test_interceptor_malformed_response(mock_user_identity: Any, mock_services: Any, mock_scrub: Any) -> None:
-    mock_budget, mock_proxy, mock_telemetry = mock_services
-
-    # Return response that lacks choices/message/content structure but passes Pydantic validation?
-    # If it fails Pydantic validation, it will raise 500 or validation error.
-    # The route returns `ChatCompletionResponse(**response)`.
-    # So if proxy returns garbage, we expect 500.
+def test_interceptor_malformed_response(
+    mock_user_identity: Any, mock_services: Any, mock_scrub: Any, mock_ier_logger: Any
+) -> None:
+    mock_budget, mock_proxy = mock_services
 
     # Let's return valid structural data but empty content to simulate "malformed" content extraction case
     mock_proxy.execute_inference.return_value = {
@@ -161,5 +163,5 @@ def test_interceptor_malformed_response(mock_user_identity: Any, mock_services: 
     assert response.status_code == 200
 
     # Telemetry should log empty output
-    mock_telemetry.async_log_telemetry.assert_called()
-    assert "SCRUBBED" in mock_telemetry.async_log_telemetry.call_args[1]["output_text"]
+    mock_ier_logger.log_llm_transaction.assert_called()
+    assert "SCRUBBED" in mock_ier_logger.log_llm_transaction.call_args[1]["response_preview"]

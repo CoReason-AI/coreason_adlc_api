@@ -14,11 +14,13 @@ import litellm
 from fastapi import APIRouter, BackgroundTasks, Depends
 
 from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
+from opentelemetry import trace
+
 from coreason_adlc_api.middleware.budget import BudgetService
-from coreason_adlc_api.middleware.pii import scrub_pii_payload
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
-from coreason_adlc_api.middleware.telemetry import TelemetryService
 from coreason_adlc_api.routers.schemas import ChatCompletionRequest, ChatCompletionResponse
+from coreason_veritas.auditor import IERLogger
+from coreason_veritas.sanitizer import scrub_pii_payload
 
 router = APIRouter(prefix="/chat", tags=["interceptor"])
 
@@ -31,10 +33,6 @@ def get_proxy_service() -> InferenceProxyService:
     return InferenceProxyService()
 
 
-def get_telemetry_service() -> TelemetryService:
-    return TelemetryService()
-
-
 @router.post("/completions", response_model=ChatCompletionResponse)
 async def chat_completions(
     request: ChatCompletionRequest,
@@ -42,7 +40,6 @@ async def chat_completions(
     user: UserIdentity = Depends(parse_and_validate_token),
     budget_service: BudgetService = Depends(get_budget_service),
     proxy_service: InferenceProxyService = Depends(get_proxy_service),
-    telemetry_service: TelemetryService = Depends(get_telemetry_service),
 ) -> ChatCompletionResponse:
     """
     The Interceptor: Budget -> Proxy -> Scrub -> Log.
@@ -90,7 +87,7 @@ async def chat_completions(
     scrubbed_input = await scrub_pii_payload(input_text) or ""
     scrubbed_output = await scrub_pii_payload(response_content) or ""
 
-    # 6. Async Telemetry Logging
+    # 6. Async Telemetry Logging via Veritas IERLogger
     latency_ms = int((time.time() - start_time) * 1000)
 
     # Calculate real cost from usage if available, else estimate
@@ -102,14 +99,26 @@ async def chat_completions(
     except Exception:
         pass
 
-    background_tasks.add_task(
-        telemetry_service.async_log_telemetry,
-        user_id=user.oid,
-        auc_id=request.auc_id,
-        model_name=request.model,
-        input_text=scrubbed_input,
-        output_text=scrubbed_output,
-        metadata={"cost_usd": real_cost, "latency_ms": latency_ms},
+    # Extract Token Usage
+    usage = response.get("usage", {})
+    input_tokens = usage.get("prompt_tokens", 0)
+    output_tokens = usage.get("completion_tokens", 0)
+
+    # Extract Trace ID
+    span = trace.get_current_span()
+    trace_id = format(span.get_span_context().trace_id, "032x")
+
+    IERLogger().log_llm_transaction(
+        trace_id=trace_id,
+        user_id=str(user.oid),
+        project_id=request.auc_id,
+        model=request.model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=real_cost,
+        latency_ms=latency_ms,
+        prompt_preview=scrubbed_input[:200],  # Short preview for logs
+        response_preview=scrubbed_output[:200],
     )
 
     return ChatCompletionResponse(**response)
