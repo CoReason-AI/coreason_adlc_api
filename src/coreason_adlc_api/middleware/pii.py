@@ -18,7 +18,10 @@ if TYPE_CHECKING:
 
 try:
     from presidio_analyzer import AnalyzerEngine
-except ImportError:
+except Exception as e:
+    # Catching Exception because presidio-analyzer/spacy can raise
+    # pydantic.v1.errors.ConfigError (RuntimeError) on Python 3.14
+    logger.warning(f"Failed to import presidio_analyzer: {e}")
     AnalyzerEngine = None  # type: ignore[assignment,misc,unused-ignore]
 
 
