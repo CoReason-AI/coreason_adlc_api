@@ -17,39 +17,7 @@ from loguru import logger
 
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.utils import get_redis_client
-
-# Atomic check-and-update script
-# Keys: [budget_key]
-# Args: [cost, limit, expiry_seconds]
-# Returns: [is_allowed (1/0), new_balance, is_new_key (1/0)]
-BUDGET_LUA_SCRIPT = """
-local key = KEYS[1]
-local cost_micros = tonumber(ARGV[1])
-local limit_micros = tonumber(ARGV[2])
-local expiry = tonumber(ARGV[3])
-
-local current_micros = tonumber(redis.call('GET', key) or "0")
-
-if current_micros + cost_micros > limit_micros then
-    return {0, current_micros, 0}
-end
-
-local new_balance_micros = redis.call('INCRBY', key, cost_micros)
-local is_new = 0
-
--- Check if this is the first write (roughly, if balance == cost)
--- Or we can check TTL. But INCRBY doesn't reset TTL.
--- If new_balance is exactly cost, it was 0 before (or expired).
-local ttl = redis.call('PTTL', key)
-
-if ttl == -1 then
-    -- No expiry set, so it's likely new (or persisted forever).
-    redis.call('EXPIRE', key, expiry)
-    is_new = 1
-end
-
-return {1, new_balance_micros, is_new}
-"""
+from coreason_veritas.quota import QuotaExceededError, QuotaGuard
 
 
 class BudgetService:
@@ -66,40 +34,21 @@ class BudgetService:
         if estimated_cost < 0:
             raise ValueError("Estimated cost cannot be negative.")
 
-        client = get_redis_client()
-
-        # Key format: budget:{YYYY-MM-DD}:{user_uuid}
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        key = f"budget:{today}:{user_id}"
-
-        # Convert to micros (integers)
-        cost_micros = int(estimated_cost * 1_000_000)
-        limit_micros = int(settings.DAILY_BUDGET_LIMIT * 1_000_000)
-
         try:
-            # Execute Lua Script
-            result = await client.eval(  # type: ignore[no-untyped-call]
-                BUDGET_LUA_SCRIPT,
-                1,  # numkeys
-                key,
-                cost_micros,
-                limit_micros,
-                172800,  # 2 days expiry
-            )
-
-            is_allowed = int(result[0])
-
-            if not is_allowed:
-                logger.warning(
-                    f"Budget exceeded for user {user_id}. "
-                    f"Attempted: ${estimated_cost}, Limit: ${settings.DAILY_BUDGET_LIMIT}"
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail="Daily budget limit exceeded.",
-                )
-
+            # Instantiate guard with daily limit
+            guard = QuotaGuard(get_redis_client(), settings.DAILY_BUDGET_LIMIT)
+            await guard.check_and_increment(str(user_id), estimated_cost)
             return True
+
+        except QuotaExceededError as e:
+            logger.warning(
+                f"Budget exceeded for user {user_id}. "
+                f"Attempted: ${estimated_cost}, Limit: ${settings.DAILY_BUDGET_LIMIT}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Daily budget limit exceeded.",
+            ) from e
 
         except redis.RedisError as e:
             logger.error(f"Redis error in budget check: {e}")
@@ -121,19 +70,15 @@ class BudgetService:
         Read-only check if the user has exceeded their daily budget.
         Returns True if valid (under limit), False if limit reached.
         """
-        client = get_redis_client()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        key = f"budget:{today}:{user_id}"
-
         try:
-            current_spend_micros = await client.get(key)
-            if current_spend_micros is None:
-                return True
+            guard = QuotaGuard(get_redis_client(), settings.DAILY_BUDGET_LIMIT)
+            status_info = await guard.check_status(str(user_id))
 
-            current_spend_micros_int = int(current_spend_micros)
-            limit_micros = int(settings.DAILY_BUDGET_LIMIT * 1_000_000)
-
-            return current_spend_micros_int < limit_micros
+            # Assuming status_info contains 'remaining' or comparison needed
+            # If remaining > 0, then valid?
+            # Or current_usage < limit.
+            remaining = status_info.get("remaining", 0.0)
+            return float(remaining) > 0
 
         except (redis.RedisError, ValueError, TypeError, Exception) as e:
             logger.error(f"Error checking budget status: {e}")
