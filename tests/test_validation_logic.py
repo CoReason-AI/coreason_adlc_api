@@ -7,8 +7,6 @@ from fastapi.testclient import TestClient
 
 from coreason_adlc_api.app import app
 from coreason_adlc_api.middleware.budget import check_budget_status
-from coreason_veritas.sanitizer import scrub_pii_recursive
-
 
 # PII Recursion tests removed as they test external library logic.
 

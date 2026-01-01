@@ -8,21 +8,20 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import json
 import uuid
 from datetime import datetime, timezone
 from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import coreason_veritas.sanitizer
 import pytest
+from coreason_veritas.exceptions import QuotaExceededError
 from fastapi import HTTPException
 
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.middleware.budget import check_budget_guardrail
 from coreason_adlc_api.workbench.locking import acquire_draft_lock
 from coreason_adlc_api.workbench.schemas import AccessMode
-from coreason_veritas.exceptions import QuotaExceededError
-import coreason_veritas.sanitizer
 
 
 @pytest.fixture
@@ -105,8 +104,9 @@ async def test_bg02_toxic_telemetry_prevention() -> None:
         scrubbed_input = coreason_veritas.sanitizer.scrub_pii_payload(input_text)
 
         # Verify output
-        assert "<REDACTED PHONE_NUMBER>" in scrubbed_input  # type: ignore
-        assert "555-0199" not in scrubbed_input  # type: ignore
+        assert scrubbed_input is not None
+        assert "<REDACTED PHONE_NUMBER>" in scrubbed_input
+        assert "555-0199" not in scrubbed_input
 
         # Verify call
         mock_scrub.assert_called_with(input_text)
