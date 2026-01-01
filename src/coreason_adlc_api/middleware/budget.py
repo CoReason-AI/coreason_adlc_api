@@ -72,7 +72,8 @@ class BudgetService:
         """
         try:
             guard = QuotaGuard(get_redis_client(), settings.DAILY_BUDGET_LIMIT)
-            return await guard.check_status(str(user_id))
+            # check_status returns bool
+            return bool(await guard.check_status(str(user_id)))
 
         except (redis.RedisError, ValueError, TypeError, Exception) as e:
             logger.error(f"Error checking budget status: {e}")
