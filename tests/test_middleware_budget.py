@@ -12,11 +12,11 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from coreason_veritas.quota import QuotaExceededError
 from fastapi import HTTPException
 from redis import RedisError
 
 from coreason_adlc_api.middleware.budget import check_budget_guardrail
-from coreason_veritas.quota import QuotaExceededError
 
 
 @pytest.fixture
