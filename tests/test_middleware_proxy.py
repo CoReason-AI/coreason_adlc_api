@@ -70,6 +70,7 @@ async def test_proxy_success(
     # Verify LiteLLM call
     mock_litellm.acompletion.assert_called_once()
     kwargs = mock_litellm.acompletion.call_args[1]
+    # DeterminismInterceptor sets temperature to 0.0
     assert kwargs["temperature"] == 0.0
     assert kwargs["seed"] == 42
     assert kwargs["api_key"] == "raw-api-key"

@@ -12,11 +12,13 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 import litellm
+from coreason_veritas.anchor import DeterminismInterceptor
+from coreason_veritas.exceptions import CircuitOpenError
+from coreason_veritas.resilience import AsyncCircuitBreaker
 from fastapi import HTTPException, status
 from loguru import logger
 
 from coreason_adlc_api.db import get_pool
-from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.vault.crypto import VaultCrypto
 
 # Circuit Breaker Registry
@@ -79,10 +81,12 @@ class InferenceProxyService:
             kwargs = {
                 "model": model,
                 "messages": messages,
-                "temperature": 0.0,
                 "seed": user_context.get("seed", 42) if user_context else 42,
                 "api_key": api_key,
             }
+
+            # Enforce determinism via Veritas
+            kwargs = DeterminismInterceptor.enforce_config(kwargs)
 
             breaker = self.get_circuit_breaker(provider)
             async with breaker:
@@ -90,7 +94,7 @@ class InferenceProxyService:
 
             return response
 
-        except CircuitBreakerOpenError as e:
+        except CircuitOpenError as e:
             logger.error(f"Circuit Breaker Open for Inference Proxy (Provider: {self.get_provider_for_model(model)})")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

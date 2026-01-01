@@ -1,3 +1,4 @@
+import sys
 from typing import Any, Callable, Generator
 from unittest.mock import MagicMock, patch
 
@@ -9,6 +10,18 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPubl
 
 from coreason_adlc_api.config import settings
 from coreason_adlc_api.middleware.proxy import _breakers
+
+# MOCK coreason-veritas
+# This must be done before any imports of coreason_adlc_api that use it
+from tests.mocks import mock_veritas_lib as coreason_veritas
+
+sys.modules["coreason_veritas"] = coreason_veritas
+sys.modules["coreason_veritas.resilience"] = coreason_veritas
+sys.modules["coreason_veritas.anchor"] = coreason_veritas
+sys.modules["coreason_veritas.quota"] = coreason_veritas
+sys.modules["coreason_veritas.sanitizer"] = coreason_veritas
+sys.modules["coreason_veritas.auditor"] = coreason_veritas
+sys.modules["coreason_veritas.exceptions"] = coreason_veritas
 
 
 @pytest.fixture(autouse=True)

@@ -11,7 +11,7 @@
 import asyncio
 import datetime
 from typing import Any, Dict
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -47,7 +47,7 @@ async def test_long_running_request_completes_after_expiry(mock_oidc_factory: An
             side_effect=slow_proxy_response,
         ),
         # Mock telemetry to avoid DB calls
-        patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()),
+        patch("coreason_adlc_api.routers.interceptor.IERLogger"),
         # Mock cost estimation
         patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.estimate_request_cost", return_value=0.01),
     ):
