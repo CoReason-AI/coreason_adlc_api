@@ -59,7 +59,7 @@ def test_interceptor_malformed_response(mock_user_identity: Any) -> None:
         mock.patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference") as mock_proxy,
         mock.patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.estimate_request_cost", return_value=0.1),
         mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as mock_scrub,
-        mock.patch("coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry"),
+        mock.patch("coreason_adlc_api.routers.interceptor.IERLogger"),
     ):
         mock_budget.return_value = True
         # Return response that lacks "choices"

@@ -98,9 +98,7 @@ async def test_chat_pii_edge_cases(mock_auth_header: str) -> None:
         patch(
             "coreason_adlc_api.middleware.proxy.InferenceProxyService.execute_inference", return_value=mock_proxy_resp
         ),
-        patch(
-            "coreason_adlc_api.middleware.telemetry.TelemetryService.async_log_telemetry", new=AsyncMock()
-        ) as mock_log,
+        patch("coreason_adlc_api.routers.interceptor.IERLogger") as mock_ier_logger_cls,
         patch("coreason_adlc_api.middleware.proxy.InferenceProxyService.estimate_request_cost", return_value=0.01),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -113,8 +111,8 @@ async def test_chat_pii_edge_cases(mock_auth_header: str) -> None:
             resp = await ac.post("/api/v1/chat/completions", json=payload, headers={"Authorization": mock_auth_header})
             assert resp.status_code == 200
 
-            # Verify telemetry was called (we don't check scrubbing logic here, just that it didn't crash)
-            mock_log.assert_called()
+            # Verify telemetry was called
+            mock_ier_logger_cls.return_value.log_llm_transaction.assert_called()
 
             # 2. Empty input
             payload["messages"] = [{"role": "user", "content": ""}]
