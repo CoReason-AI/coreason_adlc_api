@@ -13,7 +13,7 @@ from coreason_adlc_api.middleware.proxy import _breakers
 
 # MOCK coreason-veritas
 # This must be done before any imports of coreason_adlc_api that use it
-from tests.mocks import coreason_veritas
+from tests.mocks import mock_veritas_lib as coreason_veritas
 
 sys.modules["coreason_veritas"] = coreason_veritas
 sys.modules["coreason_veritas.resilience"] = coreason_veritas

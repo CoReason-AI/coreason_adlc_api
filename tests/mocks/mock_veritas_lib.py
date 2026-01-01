@@ -1,15 +1,19 @@
-from typing import Any, Callable, Dict, List, Optional, Type
-from collections import deque
 import time
+from collections import deque
+from typing import Any, Dict, Type
+
 
 class CoreasonError(Exception):
     pass
 
+
 class CircuitOpenError(CoreasonError):
     pass
 
+
 class QuotaExceededError(Exception):
     pass
+
 
 class QuotaGuard:
     def __init__(self, redis_client: Any, limit: float) -> None:
@@ -21,6 +25,7 @@ class QuotaGuard:
 
     async def check_status(self, user_id: str) -> Dict[str, Any]:
         return {"current_usage": 0.0, "limit": self.limit, "remaining": self.limit}
+
 
 class AsyncCircuitBreaker:
     def __init__(self, fail_max: int = 5, reset_timeout: float = 60) -> None:
@@ -35,7 +40,7 @@ class AsyncCircuitBreaker:
             if time.time() - self.last_failure_time > self.reset_timeout:
                 self.state = "half-open"
             else:
-                 raise CircuitOpenError("Circuit is open")
+                raise CircuitOpenError("Circuit is open")
         return self
 
     async def __aexit__(self, exc_type: Type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> bool:
@@ -45,14 +50,17 @@ class AsyncCircuitBreaker:
                 self.last_failure_time = time.time()
         return False
 
+
 class DeterminismInterceptor:
     @staticmethod
     def enforce_config(config: Dict[str, Any]) -> Dict[str, Any]:
         config["temperature"] = 0.0
         return config
 
+
 def scrub_pii_payload(payload: Any) -> Any:
     return payload
+
 
 class IERLogger:
     def log_llm_transaction(self, **kwargs: Any) -> None:
