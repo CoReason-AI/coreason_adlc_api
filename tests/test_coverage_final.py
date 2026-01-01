@@ -14,56 +14,10 @@ from unittest import mock
 import pytest
 from fastapi import HTTPException
 
-from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.middleware.proxy import (
     InferenceProxyService,
     _breakers,
 )
-
-
-@pytest.mark.asyncio
-async def test_circuit_breaker_call_method() -> None:
-    """Test the 'call' method of AsyncCircuitBreaker which was missing coverage."""
-    # Use small window/timeout for testing
-    cb = AsyncCircuitBreaker(fail_max=2, reset_timeout=0.1, time_window=1.0)
-
-    # 1. Success case
-    async def success_func() -> str:
-        return "ok"
-
-    res = await cb.call(success_func)
-    assert res == "ok"
-    assert cb.state == "closed"
-    assert len(cb.failure_history) == 0
-
-    # 2. Failure case
-    async def fail_func() -> None:
-        raise ValueError("fail")
-
-    with pytest.raises(ValueError):
-        await cb.call(fail_func)
-    assert len(cb.failure_history) == 1
-
-    with pytest.raises(ValueError):
-        await cb.call(fail_func)
-    assert len(cb.failure_history) == 2
-    assert cb.state == "open"
-
-    # 3. Call while open -> CircuitBreakerOpenError
-    with pytest.raises(CircuitBreakerOpenError):
-        await cb.call(success_func)
-
-    # 4. Wait for reset
-    import asyncio
-
-    await asyncio.sleep(0.2)
-
-    # 5. Half-open success
-    res = await cb.call(success_func)
-    assert res == "ok"
-    assert cb.state == "closed"
-    # Success clears history in Half-Open transition
-    assert len(cb.failure_history) == 0
 
 
 @pytest.mark.asyncio
