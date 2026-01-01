@@ -11,7 +11,8 @@
 from uuid import UUID
 
 import redis.asyncio as redis
-from coreason_veritas.quota import QuotaExceededError, QuotaGuard
+from coreason_veritas.exceptions import QuotaExceededError
+from coreason_veritas.quota import QuotaGuard
 from fastapi import HTTPException, status
 from loguru import logger
 
@@ -71,13 +72,7 @@ class BudgetService:
         """
         try:
             guard = QuotaGuard(get_redis_client(), settings.DAILY_BUDGET_LIMIT)
-            status_info = await guard.check_status(str(user_id))
-
-            # Assuming status_info contains 'remaining' or comparison needed
-            # If remaining > 0, then valid?
-            # Or current_usage < limit.
-            remaining = status_info.get("remaining", 0.0)
-            return float(remaining) > 0
+            return await guard.check_status(str(user_id))
 
         except (redis.RedisError, ValueError, TypeError, Exception) as e:
             logger.error(f"Error checking budget status: {e}")

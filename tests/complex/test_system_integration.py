@@ -18,7 +18,6 @@ from fastapi import BackgroundTasks, HTTPException
 from coreason_adlc_api.auth.identity import UserIdentity
 from coreason_adlc_api.middleware.budget import BudgetService
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
-from coreason_adlc_api.middleware.telemetry import TelemetryService
 from coreason_adlc_api.routers.interceptor import chat_completions
 from coreason_adlc_api.routers.schemas import ChatCompletionRequest, ChatMessage
 from coreason_adlc_api.routers.workbench import create_new_draft
@@ -102,9 +101,6 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
 
     # 2. Redis: Budget & Telemetry (Async)
     mock_redis = AsyncMock()
-    # Budget: uses eval now. Returns [1, new_spend, is_new]
-    # Simulate spending 0.01 (request cost) + previous 0.04 = 0.05
-    mock_redis.eval.return_value = [1, 0.05, 0]
 
     # 3. Vault Crypto
     mock_crypto = MagicMock()
@@ -129,10 +125,11 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         patch("coreason_adlc_api.auth.identity.get_pool", return_value=mock_pool),
         # Patch Redis getters
         patch("coreason_adlc_api.middleware.budget.get_redis_client", return_value=mock_redis),
-        patch("coreason_adlc_api.middleware.telemetry.get_redis_client", return_value=mock_redis),
         # Patch Services/Logic
         patch("coreason_adlc_api.routers.workbench.map_groups_to_projects", new_callable=AsyncMock) as mock_map_groups,
         patch("coreason_adlc_api.routers.workbench.create_draft", new_callable=AsyncMock) as mock_create_draft,
+        patch("coreason_adlc_api.middleware.budget.QuotaGuard") as mock_quota_guard_cls,
+        patch("coreason_adlc_api.routers.interceptor.IERLogger") as mock_ier_logger_cls,
         # Patch VaultCrypto where it is used in proxy.py
         patch("coreason_adlc_api.middleware.proxy.VaultCrypto", return_value=mock_crypto),
         # Patch LiteLLM
@@ -156,10 +153,11 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         mock_create_draft.return_value = MagicMock(auc_id=auc_id, title="Agent Smith")
         mock_acompletion.return_value = mock_litellm_resp
 
-        async def mock_scrub_side_effect(x: str) -> str:
-            return x.replace("sensitive@example.com", "<REDACTED>")
+        # Make QuotaGuard methods async
+        mock_quota_guard_cls.return_value.check_and_increment = AsyncMock(return_value=True)
 
-        mock_scrub.side_effect = mock_scrub_side_effect
+        # Veritas scrubber is synchronous
+        mock_scrub.side_effect = lambda x: x.replace("sensitive@example.com", "<REDACTED>")
 
         # --- STEP 1: Workbench - Create Draft ---
         draft_req = DraftCreate(auc_id=auc_id, title="Agent Smith", oas_content={})
@@ -182,9 +180,8 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         # Instantiate services manually for direct function call
         budget_svc = BudgetService()
         proxy_svc = InferenceProxyService()
-        telemetry_svc = TelemetryService()
 
-        _ = await chat_completions(chat_req, bg_tasks, identity, budget_svc, proxy_svc, telemetry_svc)
+        _ = await chat_completions(chat_req, bg_tasks, identity, budget_svc, proxy_svc)
 
         # Execute background tasks manually for the test
         for task in bg_tasks.tasks:
@@ -193,7 +190,7 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         # --- Verification Phase ---
 
         # 1. Budget Checked?
-        mock_redis.eval.assert_called()  # Should call eval for budget check
+        mock_quota_guard_cls.return_value.check_and_increment.assert_called()
 
         # 2. Vault Accessed?
         mock_pool.fetchrow.assert_called()  # To get encrypted key
@@ -211,29 +208,13 @@ async def test_full_agent_lifecycle_with_governance(mock_pool: MagicMock) -> Non
         assert mock_scrub.call_count == 2
 
         # 5. Telemetry Logged?
-        # We need to verify `async_log_telemetry` pushed to Redis
-        # Note: `async_log_telemetry` calls `client.rpush`
-        mock_redis.rpush.assert_called_once()
+        mock_ier_logger = mock_ier_logger_cls.return_value
+        mock_ier_logger.log_llm_transaction.assert_called_once()
+        log_kwargs = mock_ier_logger.log_llm_transaction.call_args[1]
 
-        # Inspect the pushed payload
-        call_args = mock_redis.rpush.call_args
-        queue_name, json_payload = call_args[0]
-        assert queue_name == "telemetry_queue"
-
-        # Since json_payload is a string, we check substrings or parse it
-        import json
-
-        payload_dict = json.loads(json_payload)
-
-        assert payload_dict["auc_id"] == auc_id
-        assert payload_dict["user_uuid"] == str(user_oid)
-        assert payload_dict["cost_usd"] == 0.03  # Real cost from completion_cost mock
-
-        # Verify SCRUBBED content was logged
-        # Keys in payload are request_payload/response_payload, not input_text/output_text
-        assert "<REDACTED>" in payload_dict["request_payload"]
-        assert "<REDACTED>" in payload_dict["response_payload"]
-        assert "sensitive@example.com" not in payload_dict["request_payload"]
+        assert log_kwargs["project_id"] == auc_id
+        assert log_kwargs["user_id"] == str(user_oid)
+        assert log_kwargs["cost_usd"] == 0.03
 
 
 @pytest.mark.asyncio
@@ -246,16 +227,14 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
 
     identity = UserIdentity(oid=user_oid, email="poor@example.com", groups=[], full_name="Poor User")
 
-    mock_redis = AsyncMock()
-    # Simulate Budget Limit Hit:
-    # Lua script returns [0 (failed), current_balance, 0]
-    # We simulate current balance = 10.0, limit = 10.0, cost = 1.0 -> 11.0 > 10.0
-    mock_redis.eval.return_value = [0, 10.0, 0]
+    from coreason_veritas.exceptions import QuotaExceededError
 
     with (
-        patch("coreason_adlc_api.middleware.budget.get_redis_client", return_value=mock_redis),
-        patch("coreason_adlc_api.middleware.budget.settings.DAILY_BUDGET_LIMIT", 10.0),
+        patch("coreason_adlc_api.middleware.budget.QuotaGuard") as mock_guard_cls,
     ):
+        mock_guard_instance = mock_guard_cls.return_value
+        mock_guard_instance.check_and_increment.side_effect = QuotaExceededError("Limit hit")
+
         req = ChatCompletionRequest(
             model="gpt-4", messages=[ChatMessage(role="user", content="hi")], auc_id=auc_id, estimated_cost=1.0
         )
@@ -265,13 +244,9 @@ async def test_budget_exceeded_blocking(mock_pool: MagicMock) -> None:
         # Instantiate services manually for direct function call
         budget_svc = BudgetService()
         proxy_svc = InferenceProxyService()
-        telemetry_svc = TelemetryService()
 
         with pytest.raises(HTTPException) as exc:
-            await chat_completions(req, bg_tasks, identity, budget_svc, proxy_svc, telemetry_svc)
+            await chat_completions(req, bg_tasks, identity, budget_svc, proxy_svc)
 
         assert exc.value.status_code == 402
         assert "limit exceeded" in exc.value.detail
-
-        # Verify no separate rollback call (handled by atomic Lua)
-        assert not mock_redis.incrbyfloat.called

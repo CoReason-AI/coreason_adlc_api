@@ -20,11 +20,11 @@ class QuotaGuard:
         self.redis_client = redis_client
         self.limit = limit
 
-    async def check_and_increment(self, user_id: str, cost: float) -> None:
-        pass
+    async def check_and_increment(self, user_id: str, cost: float) -> bool:
+        return True
 
-    async def check_status(self, user_id: str) -> Dict[str, Any]:
-        return {"current_usage": 0.0, "limit": self.limit, "remaining": self.limit}
+    async def check_status(self, user_id: str) -> bool:
+        return True
 
 
 class AsyncCircuitBreaker:

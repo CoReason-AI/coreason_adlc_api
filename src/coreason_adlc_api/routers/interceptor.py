@@ -11,16 +11,15 @@
 import time
 
 import litellm
+from coreason_veritas.auditor import IERLogger
+from coreason_veritas.sanitizer import scrub_pii_payload
 from fastapi import APIRouter, BackgroundTasks, Depends
-
-from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from opentelemetry import trace
 
+from coreason_adlc_api.auth.identity import UserIdentity, parse_and_validate_token
 from coreason_adlc_api.middleware.budget import BudgetService
 from coreason_adlc_api.middleware.proxy import InferenceProxyService
 from coreason_adlc_api.routers.schemas import ChatCompletionRequest, ChatCompletionResponse
-from coreason_veritas.auditor import IERLogger
-from coreason_veritas.sanitizer import scrub_pii_payload
 
 router = APIRouter(prefix="/chat", tags=["interceptor"])
 
@@ -84,8 +83,9 @@ async def chat_completions(
     # Flatten messages to string for scrubbing/logging
     input_text = "\n".join([m.get("content", "") for m in messages_dicts])
 
-    scrubbed_input = await scrub_pii_payload(input_text) or ""
-    scrubbed_output = await scrub_pii_payload(response_content) or ""
+    # Veritas scrubber is synchronous
+    scrubbed_input = scrub_pii_payload(input_text) or ""
+    scrubbed_output = scrub_pii_payload(response_content) or ""
 
     # 6. Async Telemetry Logging via Veritas IERLogger
     latency_ms = int((time.time() - start_time) * 1000)
@@ -117,8 +117,6 @@ async def chat_completions(
         output_tokens=output_tokens,
         cost_usd=real_cost,
         latency_ms=latency_ms,
-        prompt_preview=scrubbed_input[:200],  # Short preview for logs
-        response_preview=scrubbed_output[:200],
     )
 
     return ChatCompletionResponse(**response)

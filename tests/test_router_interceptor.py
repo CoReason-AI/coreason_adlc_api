@@ -73,11 +73,8 @@ def mock_ier_logger() -> Any:
 @pytest.fixture
 def mock_scrub() -> Any:
     with mock.patch("coreason_adlc_api.routers.interceptor.scrub_pii_payload") as m:
-        # Need to return a coroutine because router calls await
-        async def side_effect(x: str) -> str:
-            return f"SCRUBBED[{x}]"
-
-        m.side_effect = side_effect
+        # Veritas scrubber is synchronous
+        m.side_effect = lambda x: f"SCRUBBED[{x}]"
         yield m
 
 
@@ -118,8 +115,7 @@ def test_interceptor_flow_success(
     log_kwargs = mock_ier_logger.log_llm_transaction.call_args[1]
     assert log_kwargs["user_id"] == str(mock_user_identity.oid)
     assert log_kwargs["model"] == "gpt-4"
-    assert "SCRUBBED" in log_kwargs["prompt_preview"]
-    assert "SCRUBBED" in log_kwargs["response_preview"]
+    # Previews removed from interface
     assert log_kwargs["input_tokens"] == 10
     assert log_kwargs["output_tokens"] == 20
     assert isinstance(log_kwargs["cost_usd"], float)
@@ -164,4 +160,5 @@ def test_interceptor_malformed_response(
 
     # Telemetry should log empty output
     mock_ier_logger.log_llm_transaction.assert_called()
-    assert "SCRUBBED" in mock_ier_logger.log_llm_transaction.call_args[1]["response_preview"]
+    # Previews removed from interface, so just check call
+    assert mock_ier_logger.log_llm_transaction.call_count >= 1

@@ -12,7 +12,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from coreason_veritas.quota import QuotaExceededError
+from coreason_veritas.exceptions import QuotaExceededError
 from fastapi import HTTPException
 from redis import RedisError
 
