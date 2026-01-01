@@ -8,62 +8,16 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_adlc_api
 
-import time
 from unittest import mock
 
 import pytest
+from coreason_veritas.exceptions import CircuitOpenError
 from fastapi import HTTPException
 
-from coreason_adlc_api.middleware.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
 from coreason_adlc_api.middleware.proxy import (
     InferenceProxyService,
     _breakers,
 )
-
-
-@pytest.mark.asyncio
-async def test_circuit_breaker_call_method() -> None:
-    """Test the 'call' method of AsyncCircuitBreaker which was missing coverage."""
-    # Use small window/timeout for testing
-    cb = AsyncCircuitBreaker(fail_max=2, reset_timeout=0.1, time_window=1.0)
-
-    # 1. Success case
-    async def success_func() -> str:
-        return "ok"
-
-    res = await cb.call(success_func)
-    assert res == "ok"
-    assert cb.state == "closed"
-    assert len(cb.failure_history) == 0
-
-    # 2. Failure case
-    async def fail_func() -> None:
-        raise ValueError("fail")
-
-    with pytest.raises(ValueError):
-        await cb.call(fail_func)
-    assert len(cb.failure_history) == 1
-
-    with pytest.raises(ValueError):
-        await cb.call(fail_func)
-    assert len(cb.failure_history) == 2
-    assert cb.state == "open"
-
-    # 3. Call while open -> CircuitBreakerOpenError
-    with pytest.raises(CircuitBreakerOpenError):
-        await cb.call(success_func)
-
-    # 4. Wait for reset
-    import asyncio
-
-    await asyncio.sleep(0.2)
-
-    # 5. Half-open success
-    res = await cb.call(success_func)
-    assert res == "ok"
-    assert cb.state == "closed"
-    # Success clears history in Half-Open transition
-    assert len(cb.failure_history) == 0
 
 
 @pytest.mark.asyncio
@@ -120,19 +74,18 @@ async def test_proxy_generic_exception() -> None:
 
 @pytest.mark.asyncio
 async def test_proxy_breaker_open_exception() -> None:
-    """Explicitly test the CircuitBreakerOpenError catch block in proxy."""
+    """Explicitly test the CircuitOpenError catch block in proxy."""
     proxy_service = InferenceProxyService()
 
-    # We assume provider is openai
-    breaker = proxy_service.get_circuit_breaker("openai")
-    breaker.state = "open"
-    breaker.last_failure_time = time.time()
-
-    # Need to mock get_api_key otherwise it might fail first (if we didn't mock DB)
+    # We need to mock the breaker to ensure it raises CircuitOpenError
+    mock_breaker = mock.AsyncMock()
+    mock_breaker.__aenter__.side_effect = CircuitOpenError("Circuit is open")
+    mock_breaker.__aexit__.return_value = None
 
     with (
         mock.patch.object(proxy_service, "get_api_key_for_model") as mock_get_key,
         mock.patch("coreason_adlc_api.middleware.proxy.litellm.get_llm_provider") as mock_get_provider,
+        mock.patch.object(proxy_service, "get_circuit_breaker", return_value=mock_breaker),
     ):
         mock_get_key.return_value = "key"
         mock_get_provider.return_value = ("openai", "model", "k", "b")
