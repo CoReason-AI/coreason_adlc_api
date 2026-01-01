@@ -13,7 +13,7 @@ coreason-api = "coreason_adlc_api.main:main"
 [tool.poetry.dependencies]
 python = ">=3.12, <3.15"
 loguru = "^0.7.2"
-fastapi = "^0.127.0"
+fastapi = "^0.128.0"
 uvicorn = {extras = ["standard"], version = "^0.40.0"}
 pydantic-settings = "^2.12.0"
 cryptography = "^46.0.3"
@@ -29,6 +29,7 @@ keyring = "^24.0.0"
 alembic = "^1.17.2"
 sqlalchemy = "^2.0.45"
 psycopg2-binary = "^2.9.11"
+coreason-veritas = "^0.6.0"
 
 [tool.poetry.group.dev.dependencies]
 types-redis = "^4.6.0.20241004"
@@ -41,6 +42,7 @@ mkdocs-material = "^9.5.26"
 pytest-asyncio = "^1.3.0"
 mypy = "^1.19.1"
 types-pyyaml = "^6.0.12.20250915"
+pyjwt = "^2.10.1"
 
 [build-system]
 requires = ["poetry-core"]
