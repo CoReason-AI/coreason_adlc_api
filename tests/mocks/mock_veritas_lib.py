@@ -1,3 +1,4 @@
+import sys
 import time
 from collections import deque
 from typing import Any, Dict, Type
@@ -62,6 +63,19 @@ def scrub_pii_payload(payload: Any) -> Any:
     return payload
 
 
+def scrub_pii_recursive(data: Any) -> Any:
+    return data
+
+
 class IERLogger:
     def log_llm_transaction(self, **kwargs: Any) -> None:
         pass
+
+
+# Self-reference for submodule attribute access
+sanitizer = sys.modules[__name__]
+resilience = sys.modules[__name__]
+quota = sys.modules[__name__]
+auditor = sys.modules[__name__]
+anchor = sys.modules[__name__]
+exceptions = sys.modules[__name__]

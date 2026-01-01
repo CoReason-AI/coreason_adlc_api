@@ -7,63 +7,22 @@ from fastapi.testclient import TestClient
 
 from coreason_adlc_api.app import app
 from coreason_adlc_api.middleware.budget import check_budget_status
-from coreason_adlc_api.middleware.pii import scrub_pii_recursive
+from coreason_veritas.sanitizer import scrub_pii_recursive
 
 
-# Test PII Recursion
-@pytest.mark.asyncio
-async def test_scrub_pii_recursive_dict() -> None:
-    data = {"key1": "John Doe", "nested": {"key2": "john.doe@example.com", "safe": "Nothing here"}}
-
-    # We mock scrub_pii_payload to simulate PII detection (needs to be awaitable)
-    async def side_effect(val: str | None) -> str | None:
-        if val and "John Doe" in val:
-            return "<REDACTED PERSON>"
-        if val and "john.doe@example.com" in val:
-            return "<REDACTED EMAIL>"
-        return val
-
-    with patch("coreason_adlc_api.middleware.pii.scrub_pii_payload", side_effect=side_effect):
-        scrubbed = await scrub_pii_recursive(data)
-
-        assert scrubbed["key1"] == "<REDACTED PERSON>"
-        assert scrubbed["nested"]["key2"] == "<REDACTED EMAIL>"
-        assert scrubbed["nested"]["safe"] == "Nothing here"
-
-
-@pytest.mark.asyncio
-async def test_scrub_pii_recursive_list() -> None:
-    data = ["John Doe", "Safe"]
-
-    async def side_effect(val: str | None) -> str | None:
-        if val and "John" in val:
-            return "<REDACTED PERSON>"
-        return val
-
-    with patch("coreason_adlc_api.middleware.pii.scrub_pii_payload", side_effect=side_effect):
-        scrubbed = await scrub_pii_recursive(data)
-        assert scrubbed[0] == "<REDACTED PERSON>"
-        assert scrubbed[1] == "Safe"
-
-
-@pytest.mark.asyncio
-async def test_scrub_pii_recursive_primitive() -> None:
-    """Test recursion on a primitive type (int) to cover the 'else' branch."""
-    data = 12345
-    scrubbed = await scrub_pii_recursive(data)
-    assert scrubbed == 12345
+# PII Recursion tests removed as they test external library logic.
 
 
 # Test Budget Check Status
 @pytest.mark.asyncio
 async def test_check_budget_status_under_limit() -> None:
     user_id = uuid4()
-    with patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
-        mock_redis = AsyncMock()
-        mock_get_client.return_value = mock_redis
-
-        # Scenario: Spend is 10.0 (micros = 10,000,000), limit is 50.0 (50,000,000)
-        mock_redis.get.return_value = b"10000000"
+    # Mock QuotaGuard, not Redis directly
+    with patch("coreason_adlc_api.middleware.budget.QuotaGuard") as mock_guard_cls:
+        mock_instance = AsyncMock()
+        mock_guard_cls.return_value = mock_instance
+        # check_status returns boolean
+        mock_instance.check_status.return_value = True
 
         assert await check_budget_status(user_id) is True
 
@@ -71,36 +30,21 @@ async def test_check_budget_status_under_limit() -> None:
 @pytest.mark.asyncio
 async def test_check_budget_status_over_limit() -> None:
     user_id = uuid4()
-    with patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
-        mock_redis = AsyncMock()
-        mock_get_client.return_value = mock_redis
-
-        # Scenario: Spend is 60.0 (micros = 60,000,000)
-        mock_redis.get.return_value = b"60000000"
+    with patch("coreason_adlc_api.middleware.budget.QuotaGuard") as mock_guard_cls:
+        mock_instance = AsyncMock()
+        mock_guard_cls.return_value = mock_instance
+        mock_instance.check_status.return_value = False
 
         assert await check_budget_status(user_id) is False
 
 
 @pytest.mark.asyncio
-async def test_check_budget_status_no_key() -> None:
-    user_id = uuid4()
-    with patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
-        mock_redis = AsyncMock()
-        mock_get_client.return_value = mock_redis
-
-        mock_redis.get.return_value = None
-
-        assert await check_budget_status(user_id) is True
-
-
-@pytest.mark.asyncio
 async def test_check_budget_status_error() -> None:
     user_id = uuid4()
-    with patch("coreason_adlc_api.middleware.budget.get_redis_client") as mock_get_client:
-        # We need the client call to succeed but the client.get to raise
-        mock_redis = AsyncMock()
-        mock_get_client.return_value = mock_redis
-        mock_redis.get.side_effect = Exception("Redis Down")
+    with patch("coreason_adlc_api.middleware.budget.QuotaGuard") as mock_guard_cls:
+        mock_instance = AsyncMock()
+        mock_guard_cls.return_value = mock_instance
+        mock_instance.check_status.side_effect = Exception("Redis Down")
 
         # Fail closed -> False
         assert await check_budget_status(user_id) is False
@@ -134,9 +78,11 @@ def test_workbench_validate_endpoint_integration(mock_oidc_factory: Callable[[di
     draft_payload = {"auc_id": "test-project", "title": "Validation Test", "oas_content": {"content": "Secret Data"}}
 
     # Mock the internal logic checks
+    # Note: scrub_pii_recursive is imported in router from veritas (synchronous)
+    # check_budget_status is async
     with (
         patch("coreason_adlc_api.routers.workbench.check_budget_status", new_callable=AsyncMock) as mock_budget,
-        patch("coreason_adlc_api.routers.workbench.scrub_pii_recursive", new_callable=AsyncMock) as mock_pii,
+        patch("coreason_adlc_api.routers.workbench.scrub_pii_recursive") as mock_pii,
     ):
         # Scenario 1: All Valid
         mock_budget.return_value = True

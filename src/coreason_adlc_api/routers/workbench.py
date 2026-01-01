@@ -10,12 +10,12 @@
 
 from uuid import UUID
 
+from coreason_veritas.sanitizer import scrub_pii_recursive
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from coreason_adlc_api.auth.identity import UserIdentity, map_groups_to_projects, parse_and_validate_token
 from coreason_adlc_api.db import get_pool
 from coreason_adlc_api.middleware.budget import check_budget_status
-from coreason_adlc_api.middleware.pii import scrub_pii_recursive
 from coreason_adlc_api.workbench.locking import refresh_lock
 from coreason_adlc_api.workbench.schemas import (
     AgentArtifact,
@@ -146,7 +146,8 @@ async def validate_draft(
 
     # 2. PII Check
     try:
-        scrubbed_content = await scrub_pii_recursive(draft.oas_content)
+        # scrub_pii_recursive is synchronous in Veritas
+        scrubbed_content = scrub_pii_recursive(draft.oas_content)
         # Deep comparison
         if scrubbed_content != draft.oas_content:
             issues.append("PII Detected")
